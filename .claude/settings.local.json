@@ -1,0 +1,8 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(clasp:*)",
+      "Bash(tail -c 5 \"C:\\\\Users\\\\rcdga\\\\rrhh\\\\Codigo_RH_GS.js\" | xxd)"
+    ]
+  }
+}
