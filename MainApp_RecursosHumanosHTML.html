@@ -142,7 +142,15 @@ function rhToast(tipo, titulo){
     /* ── WORKERS GRID (módulo Plantilla) ── */
     .rh-worker-card{background:white;border-radius:12px;padding:14px;box-shadow:0 1px 4px rgba(0,0,0,.06);
       display:flex;align-items:flex-start;gap:12px;margin-bottom:10px;border:2px solid transparent;transition:var(--tr)}
-    .rh-worker-card.modificado{border-color:#fbbf24;background:#fffbeb}
+    .rh-worker-card{transition:box-shadow .2s,border-color .2s;padding:14px 16px!important}
+    .rh-worker-card:hover{box-shadow:0 4px 16px rgba(0,0,0,.11)!important}
+    .rh-worker-card.modificado{background:#fffbeb;border-color:#ef4444!important;animation:rh-parpadeo 1.2s ease-in-out infinite}
+    @keyframes rh-parpadeo{0%,100%{box-shadow:0 0 0 0 rgba(239,68,68,0);outline:2px solid #ef4444}50%{box-shadow:0 0 0 5px rgba(239,68,68,.25);outline:2px solid #ef4444}}
+    .val-input.campo-modificado{background:#fed7aa!important;border-color:#ea580c!important}
+    .field-row{background:#f8fafc;border:1px solid #e2e8f0;border-radius:8px;padding:5px 10px;display:flex;align-items:center;gap:6px}
+    .field-row .lbl{font-size:.65rem;font-weight:800;color:#94a3b8;text-transform:uppercase;letter-spacing:.06em;white-space:nowrap;min-width:52px}
+    .val-input{border:none;background:transparent;font-size:.85rem;font-weight:600;color:#0f172a;padding:0;outline:none;width:100%}
+    .val-input:focus{background:#eff6ff;border-radius:4px;padding:1px 4px}
     .rh-worker-card img{width:48px;height:48px;border-radius:50%;object-fit:cover;border:2px solid #e2e8f0}
     .field-row{display:flex;align-items:center;gap:8px;margin-bottom:4px}
     .lbl{font-size:.68rem;font-weight:700;color:#64748b;text-transform:uppercase;min-width:90px}
@@ -209,8 +217,34 @@ function rhToast(tipo, titulo){
   <div id="g-loader-txt">Cargando...</div>
 </div>
 
+<button id="rh-btnDeshacerTodo"
+  onclick="rh_deshacerTodo()"
+  style="
+    position:fixed;
+    bottom:32px;
+    right:270px;
+    z-index:9990;
+    background:#f1f5f9;
+    color:#64748b;
+    border:1.5px solid #cbd5e1;
+    border-radius:50px;
+    padding:14px 22px;
+    font-size:1rem;
+    font-weight:700;
+    cursor:pointer;
+    display:none;
+    align-items:center;
+    gap:8px;
+    box-shadow:0 4px 12px rgba(0,0,0,.1);
+    transition:transform .15s;
+  "
+  onmouseover="this.style.transform='scale(1.05)'"
+  onmouseout="this.style.transform='scale(1)'"
+>
+  ↩ Deshacer todo
+</button>
+
 <button id="rh-btnGuardar"
-  class="d-none"
   onclick="rh_guardarTodo()"
   title="Guardar cambios"
   style="
@@ -222,12 +256,12 @@ function rhToast(tipo, titulo){
     color:white;
     border:none;
     border-radius:50px;
-    padding:14px 22px;
+    padding:14px 28px;
     font-size:1rem;
     font-weight:700;
     box-shadow:0 8px 24px rgba(79,70,229,.45);
     cursor:pointer;
-    display:flex;
+    display:none;
     align-items:center;
     gap:8px;
     transition:transform .15s, box-shadow .15s;
@@ -235,7 +269,7 @@ function rhToast(tipo, titulo){
   onmouseover="this.style.transform='scale(1.07)';this.style.boxShadow='0 12px 32px rgba(79,70,229,.55)'"
   onmouseout="this.style.transform='scale(1)';this.style.boxShadow='0 8px 24px rgba(79,70,229,.45)'"
 >
-  💾 Save (<span id="rh-countCambios">0</span>)
+  💾 Guardar <span id="rh-countCambios">0</span> cambio(s)
 </button>
 
 <!-- ══════════════ TOAST ══════════════ -->
@@ -1009,7 +1043,7 @@ function dash_render(res){
 // ══════════════════════════════════════════════════════════
 //  MÓDULO: PLANTILLA ACTIVA
 // ══════════════════════════════════════════════════════════
-var rh_datos=[], rh_originales=[], rh_catalogoAreas={}, rh_catalogoProcesos=[], rh_idsModificados=new Set(), rh_idEditando=null;
+var rh_datos=[], rh_originales=[], rh_catalogoAreas={}, rh_catalogoProcesos=[], rh_idsModificados=new Set(), rh_camposModificados={}, rh_ordenModificados=[], rh_idEditando=null;
 
 function loadPlantilla(){
   showLoader('Cargando plantilla...');
@@ -1053,34 +1087,52 @@ function rh_renderizar(){
     return _esActivo&&(!fArea||p.area===fArea)&&(!fEst||p.estado===fEst)
            &&(!fBus||p.nombre.toLowerCase().includes(fBus));
   });
+  // Modificados al frente respetando el orden en que se editaron
+  filtrados.sort(function(a,b){
+    var ia=rh_ordenModificados.indexOf(a.id);
+    var ib=rh_ordenModificados.indexOf(b.id);
+    if(ia===-1 && ib===-1) return 0;
+    if(ia===-1) return 1;
+    if(ib===-1) return -1;
+    return ia-ib;
+  });
   var html='';
   filtrados.forEach(function(p){
     var modificado=rh_idsModificados.has(p.id);
     var modClass=modificado?'modificado':'';
+    var camposMod=rh_camposModificados[p.id]||new Set();
     var pid=String(p.id);
     var areasOpts=Object.keys(rh_catalogoAreas).map(function(a){
       return '<option value="'+a+'"'+(p.area===a?' selected':'')+'>'+a+'</option>';
     }).join('');
     var fotoUrl=(p.foto&&p.foto.trim()&&p.foto!=='undefined')?p.foto
       :'https://ui-avatars.com/api/?name='+encodeURIComponent(p.nombre||'?')+'&background=e0e7ff&color=3730a3&size=80';
-    html+='<div class="rh-worker-card '+modClass+'" style="border-left:3px solid '+(modificado?'var(--rh-color)':'#e2e8f0')+';">';
+    var estadoColor={'ACTIVO':'#16a34a','INCAPACIDAD':'#d97706','BAJA':'#dc2626'}[p.estado]||'#64748b';
+    var estadoBg={'ACTIVO':'#dcfce7','INCAPACIDAD':'#fef3c7','BAJA':'#fee2e2'}[p.estado]||'#f1f5f9';
+    var cm=function(c){return camposMod.has(c)?' campo-modificado':'';};
+    html+='<div class="rh-worker-card '+modClass+'" style="border-left:3px solid '+(modificado?'#ef4444':'#e2e8f0')+'">';
     html+='<div style="position:relative;flex-shrink:0;width:56px;height:56px" title="Clic para cambiar foto">';
     html+='<img id="foto-img-'+pid+'" src="'+fotoUrl+'" data-id="'+pid+'" style="width:56px;height:56px;border-radius:50%;object-fit:cover;cursor:pointer;border:2px solid #e2e8f0" onclick="rh_cambiarFoto(this.dataset.id)">';
     html+='<div style="position:absolute;bottom:0;right:0;background:var(--rh-color);color:white;border-radius:50%;width:18px;height:18px;font-size:10px;display:flex;align-items:center;justify-content:center;pointer-events:none"><i class="fas fa-camera"></i></div>';
     html+='<input type="file" id="foto-input-'+pid+'" data-id="'+pid+'" accept="image/*" style="display:none" onchange="rh_subirFoto(this.dataset.id,this)">';
     html+='</div>';
-    html+='<div style="flex:1;min-width:0"><div class="d-flex gap-2 flex-wrap">';
-    html+='<div class="field-row"><span class="lbl">NOMBRE</span><input class="val-input" style="min-width:200px" data-id="'+pid+'" data-campo="nombre" value="'+(p.nombre||'')+'" onchange="rh_marcarCambio(this.dataset.id,this.dataset.campo,this.value)"></div>';
-    html+='<div class="field-row"><span class="lbl">CLAVE</span><input class="val-input" style="min-width:80px" data-id="'+pid+'" data-campo="clave" value="'+(p.clave||'')+'" onchange="rh_marcarCambio(this.dataset.id,this.dataset.campo,this.value)"></div>';
-    html+='<div class="field-row"><span class="lbl">AREA</span><select class="val-input" data-id="'+pid+'" data-campo="area" onchange="rh_marcarCambio(this.dataset.id,this.dataset.campo,this.value)">'+areasOpts+'</select></div>';
-    html+='<div class="field-row"><span class="lbl">PUESTO</span><input class="val-input" data-id="'+pid+'" data-campo="puesto" value="'+(p.puesto||'')+'" onchange="rh_marcarCambio(this.dataset.id,this.dataset.campo,this.value)"></div>';
+    html+='<div style="flex:1;min-width:0">'
+      +'<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px">'
+      +'<span style="font-size:.68rem;font-weight:800;text-transform:uppercase;letter-spacing:.07em;background:'+estadoBg+';color:'+estadoColor+';border-radius:20px;padding:2px 10px;border:1px solid '+estadoColor+'40">'+p.estado+'</span>'
+      +(modificado?'<span style="font-size:.68rem;font-weight:700;color:var(--rh-color);background:#e0e7ff;border-radius:20px;padding:2px 8px"><i class="fas fa-pen me-1"></i>Modificado</span>':'')
+      +'</div>'
+      +'<div class="d-flex gap-2 flex-wrap">';
+    html+='<div class="field-row"><span class="lbl">NOMBRE</span><input class="val-input'+cm('nombre')+'" style="min-width:200px" data-id="'+pid+'" data-campo="nombre" value="'+(p.nombre||'')+'" onchange="rh_marcarCambio(this.dataset.id,this.dataset.campo,this.value)"></div>';
+    html+='<div class="field-row"><span class="lbl">CLAVE</span><input class="val-input'+cm('clave')+'" style="min-width:80px" data-id="'+pid+'" data-campo="clave" value="'+(p.clave||'')+'" onchange="rh_marcarCambio(this.dataset.id,this.dataset.campo,this.value)"></div>';
+    html+='<div class="field-row"><span class="lbl">AREA</span><select class="val-input'+cm('area')+'" data-id="'+pid+'" data-campo="area" onchange="rh_marcarCambio(this.dataset.id,this.dataset.campo,this.value)">'+areasOpts+'</select></div>';
+    html+='<div class="field-row"><span class="lbl">PUESTO</span><input class="val-input'+cm('puesto')+'" data-id="'+pid+'" data-campo="puesto" value="'+(p.puesto||'')+'" onchange="rh_marcarCambio(this.dataset.id,this.dataset.campo,this.value)"></div>';
     html+='<div class="field-row"><span class="lbl">ESTADO</span>';
-    html+='<select class="val-input" data-id="'+pid+'" onchange="rh_cambioEstado(this.dataset.id,this.value)">';
+    html+='<select class="val-input'+cm('estado')+'" data-id="'+pid+'" onchange="rh_cambioEstado(this.dataset.id,this.value)">';
     html+='<option value="ACTIVO"'+(p.estado==='ACTIVO'?' selected':'')+'>ACTIVO</option>';
     html+='<option value="INCAPACIDAD"'+(p.estado==='INCAPACIDAD'?' selected':'')+'>INCAPACIDAD</option>';
     html+='<option value="BAJA"'+(p.estado==='BAJA'?' selected':'')+'>BAJA</option>';
     html+='</select></div>';
-    html+='<div class="field-row"><span class="lbl">INGRESO</span><input class="val-input" type="date" data-id="'+pid+'" data-campo="ingreso" value="'+(p.ingreso||'')+'" onchange="rh_marcarCambio(this.dataset.id,this.dataset.campo,this.value)"></div>';
+    html+='<div class="field-row"><span class="lbl">INGRESO</span><input class="val-input'+cm('ingreso')+'" type="date" data-id="'+pid+'" data-campo="ingreso" value="'+(p.ingreso||'')+'" onchange="rh_marcarCambio(this.dataset.id,this.dataset.campo,this.value)"></div>';
     // Procesos
     var procActivos=(p.procesos&&String(p.procesos).trim())?String(p.procesos).split(',').map(function(x){return x.trim();}).filter(Boolean):[];
     var procChips=procActivos.length
@@ -1094,7 +1146,7 @@ function rh_renderizar(){
       +'data-id="'+pid+'" onclick="rh_abrirProcesos(this.dataset.id)" title="Editar procesos">'
       +'<i class="fas fa-cog me-1"></i>Editar</button>'
       +'</div></div>';
-    html+='</div></div>';
+    html+='</div></div></div>';
     if(modificado) html+='<button class="btn-undo" data-id="'+pid+'" onclick="rh_deshacer(this.dataset.id)" title="Deshacer">&#8635;</button>';
     html+='</div>';
   });
@@ -1189,10 +1241,54 @@ function rh_cambiarFoto(id){
 function rh_subirFoto(id,input){ /* no utilizado */ }
 function rh_marcarCambio(id,campo,valor){
   var p=rh_datos.find(function(x){return String(x.id)===String(id);});
-  if(p){p[campo]=valor;rh_idsModificados.add(id);rh_renderizar();}
+  if(p){
+    p[campo]=valor;
+    rh_idsModificados.add(id);
+    if(!rh_camposModificados[id]) rh_camposModificados[id]=new Set();
+    rh_camposModificados[id].add(campo);
+    // Mover al frente del orden (si no estaba ya)
+    rh_ordenModificados=rh_ordenModificados.filter(function(x){return x!==id;});
+    rh_ordenModificados.unshift(id);
+    rh_renderizar();
+  }
 }
 function rh_cambioEstado(id,nuevo){
-  if(nuevo==='BAJA'){if(!confirm('Se creará una VACANTE automática al guardar. ¿Confirmar?')){return;}}
+  if(nuevo==='BAJA'){
+    var p=rh_datos.find(function(x){return String(x.id)===String(id);});
+    var nombre=(p&&p.nombre)||'este trabajador';
+    var puesto=(p&&p.puesto)||'Sin puesto';
+    Swal.fire({
+      icon:'warning',
+      title:'⚠️ Confirmar Baja',
+      html:'<div style="font-size:.95rem">¿Dar de baja a <b>'+nombre+'</b>?<br><span style="color:#64748b;font-size:.85rem">Se generará una vacante de <b>'+puesto+'</b> automáticamente.</span></div>',
+      showCancelButton:true,
+      confirmButtonText:'Sí, dar de baja',
+      cancelButtonText:'Cancelar',
+      confirmButtonColor:'#dc2626',
+      cancelButtonColor:'#64748b'
+    }).then(function(r){
+      if(!r.isConfirmed)return;
+      // Actualizar localmente
+      if(p){ p.estado='BAJA'; }
+      // Guardar de inmediato solo este empleado
+      showLoader('Dando baja a '+nombre+'...');
+      setTimeout(function(){
+        document.getElementById('g-loader-txt').innerText='Generando vacante de '+puesto+'...';
+      },1200);
+      google.script.run
+        .withSuccessHandler(function(){
+          hideLoader();
+          rhAlert('success','Baja registrada','La baja de '+nombre+' fue procesada y se generó la vacante de '+puesto+'.',2500);
+          loadPlantilla();
+        })
+        .withFailureHandler(function(e){
+          hideLoader();
+          rhAlert('error','Error al procesar baja',''+e);
+        })
+        .guardarLoteOperadores([p]);
+    });
+    return; // salir sin pasar por rh_marcarCambio
+  }
   rh_marcarCambio(id,'estado',nuevo);
 }
 function rh_deshacer(id){
@@ -1205,18 +1301,42 @@ function rh_deshacer(id){
     rh_datos=rh_datos.filter(function(x){return String(x.id)!==String(id);});
     rh_idsModificados.delete(id);
   }
+  delete rh_camposModificados[id];
+  rh_ordenModificados=rh_ordenModificados.filter(function(x){return x!==id;});
   rh_renderizar();
+}
+function rh_deshacerTodo(){
+  Swal.fire({
+    icon:'warning',
+    title:'¿Deshacer todos los cambios?',
+    text:'Se revertirán todos los campos modificados sin guardar.',
+    showCancelButton:true,
+    confirmButtonText:'Sí, deshacer todo',
+    cancelButtonText:'Cancelar',
+    confirmButtonColor:'#64748b'
+  }).then(function(r){
+    if(!r.isConfirmed) return;
+    rh_idsModificados.forEach(function(id){
+      var orig=rh_originales.find(function(x){return String(x.id)===String(id);});
+      if(orig){
+        var idx=rh_datos.findIndex(function(x){return String(x.id)===String(id);});
+        if(idx>-1) rh_datos[idx]=JSON.parse(JSON.stringify(orig));
+      }
+    });
+    rh_idsModificados=new Set();
+    rh_camposModificados={};
+    rh_ordenModificados=[];
+    rh_renderizar();
+  });
 }
 function rh_actualizarBoton(){
   var c = rh_idsModificados.size;
   var btn = document.getElementById('rh-btnGuardar');
+  var btnU = document.getElementById('rh-btnDeshacerTodo');
   if(!btn) return;
   document.getElementById('rh-countCambios').innerText = c;
-  if(c === 0){
-    btn.style.display = 'none';
-  } else {
-    btn.style.display = 'flex';
-  }
+  btn.style.display  = c > 0 ? 'flex' : 'none';
+  if(btnU) btnU.style.display = c > 0 ? 'flex' : 'none';
 }
 function rh_guardarTodo(){
   var lote=Array.from(rh_idsModificados).map(function(id){return rh_datos.find(function(x){return String(x.id)===String(id);});}).filter(Boolean);
@@ -2333,19 +2453,35 @@ function cons_render(){
 
     // Tabla de solicitudes recientes
     if(soles.length){
+      // Total días tomados en el periodo (APLICADO + CONSIDERAR=SI)
+      var diasPeriodo = soles.reduce(function(acc, s){
+        return acc + (s.estado==='APLICADO' && String(s.considerar).toUpperCase()==='SI' ? Number(s.dias||0) : 0);
+      }, 0);
       html += '<div style="padding:14px 18px">';
-      html += '<div style="font-size:.7rem;font-weight:700;color:#64748b;text-transform:uppercase;letter-spacing:.06em;margin-bottom:8px">Últimas Solicitudes</div>';
-      html += '<table class="table table-sm table-hover align-middle" style="font-size:.85rem">';
-      html += '<thead class="table-light"><tr><th>Folio</th><th>Inicio</th><th>Fin</th><th class="text-center">Días</th><th>Estado</th><th class="text-center">Acciones</th></tr></thead>';
+      html += '<div style="display:flex;align-items:center;gap:16px;margin-bottom:8px;flex-wrap:wrap">';
+      html += '<div style="font-size:.7rem;font-weight:700;color:#64748b;text-transform:uppercase;letter-spacing:.06em">Últimas Solicitudes</div>';
+      html += '<div style="font-size:.78rem;font-weight:700;color:#1e1b4b;background:#e0e7ff;border-radius:20px;padding:3px 12px">Total días tomados en el periodo: <span style="color:#4f46e5">'+diasPeriodo+' días</span></div>';
+      html += '</div>';
+      html += '<table class="table table-sm table-hover align-middle" style="font-size:.82rem">';
+      html += '<thead class="table-light"><tr><th>Folio</th><th>Inicio</th><th>Fin</th><th class="text-center">Días</th><th>Estado</th>'
+            + '<th style="max-width:160px">Observaciones</th><th class="text-center">Considerar</th><th>Nota</th>'
+            + '<th class="text-center">Acciones</th></tr></thead>';
       html += '<tbody id="cons-tbody-'+op.id+'">';
       soles.forEach(function(s){
         var estadoColor = s.estado==='SOLICITADO'?'#ea580c':s.estado==='APLICADO'?'#15803d':s.estado==='CANCELADO'?'#6b7280':'#1d4ed8';
+        var consVal = String(s.considerar||'').toUpperCase();
+        var consColor = consVal==='SI'?'#15803d':consVal==='NO'?'#b91c1c':'#64748b';
+        var obsTxt = String(s.obs||'').trim();
         html += '<tr>';
         html += '<td class="fw-bold" style="color:var(--rh-color)">'+s.folio+'</td>';
         html += '<td>'+_consFmtFecha(s.inicio)+'</td>';
         html += '<td>'+_consFmtFecha(s.fin)+'</td>';
         html += '<td class="text-center fw-bold">'+s.dias+'</td>';
         html += '<td><span style="background:'+estadoColor+'20;color:'+estadoColor+';padding:3px 10px;border-radius:20px;font-size:.75rem;font-weight:700">'+s.estado+'</span></td>';
+        // Observaciones: ancho fijo, texto truncado, tooltip con texto completo
+        html += '<td style="max-width:160px;width:160px"><div title="'+obsTxt.replace(/"/g,"'")+'" style="white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:155px;font-size:.78rem;color:#475569">'+( obsTxt||'—')+'</div></td>';
+        html += '<td class="text-center"><span style="font-weight:700;color:'+consColor+';font-size:.8rem">'+(consVal||'—')+'</span></td>';
+        html += '<td style="font-size:.78rem;color:#475569">'+(s.nota||'—')+'</td>';
         html += '<td class="text-center" style="display:flex;gap:6px;justify-content:center;align-items:center">';
         html += '<button class="btn btn-sm" style="background:#ede9fe;color:var(--rh-color);border-radius:8px;padding:4px 10px;font-size:.8rem" '
               + 'data-accion="cons-print" data-idSol="'+s.idSol+'" data-idOp="'+op.id+'">'
@@ -2452,12 +2588,18 @@ function _cons_renderSolesDeOp(idOp){
   var rows = '';
   soles.forEach(function(s){
     var estadoColor = s.estado==='SOLICITADO'?'#ea580c':s.estado==='APLICADO'?'#15803d':s.estado==='CANCELADO'?'#6b7280':'#1d4ed8';
+    var consVal = String(s.considerar||'').toUpperCase();
+    var consColor = consVal==='SI'?'#15803d':consVal==='NO'?'#b91c1c':'#64748b';
+    var obsTxt = String(s.obs||'').trim();
     rows += '<tr>';
     rows += '<td class="fw-bold" style="color:var(--rh-color)">'+s.folio+'</td>';
     rows += '<td>'+_consFmtFecha(s.inicio)+'</td>';
     rows += '<td>'+_consFmtFecha(s.fin)+'</td>';
     rows += '<td class="text-center fw-bold">'+s.dias+'</td>';
     rows += '<td><span style="background:'+estadoColor+'20;color:'+estadoColor+';padding:3px 10px;border-radius:20px;font-size:.75rem;font-weight:700">'+s.estado+'</span></td>';
+    rows += '<td style="max-width:160px;width:160px"><div title="'+obsTxt.replace(/"/g,"'")+'" style="white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:155px;font-size:.78rem;color:#475569">'+(obsTxt||'—')+'</div></td>';
+    rows += '<td class="text-center"><span style="font-weight:700;color:'+consColor+';font-size:.8rem">'+(consVal||'—')+'</span></td>';
+    rows += '<td style="font-size:.78rem;color:#475569">'+(s.nota||'—')+'</td>';
     rows += '<td class="text-center" style="display:flex;gap:6px;justify-content:center;align-items:center">';
     rows += '<button class="btn btn-sm" style="background:#ede9fe;color:var(--rh-color);border-radius:8px;padding:4px 10px;font-size:.8rem" '
           + 'data-accion="cons-print" data-idSol="'+s.idSol+'" data-idOp="'+idOp+'">'

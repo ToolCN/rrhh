@@ -543,8 +543,8 @@ function obtenerDatosVacaciones() {
 }
 
 function actualizarSaldosYAniversarios() {
-  var ss   = SpreadsheetApp.openById(ID_HOJA_CALCULO);
-  var shOp = ss.getSheetByName("OPERADORES");
+  var ss    = SpreadsheetApp.openById(ID_HOJA_CALCULO);
+  var shOp  = ss.getSheetByName("OPERADORES");
   var shSol = ss.getSheetByName("SOLICITUDES");
   var shTab = ss.getSheetByName("TABLA_VACACIONES");
 
@@ -553,9 +553,13 @@ function actualizarSaldosYAniversarios() {
   var dataTab = shTab.getDataRange().getValues();
 
   var hoy = new Date();
+  // Fecha de hoy sin hora para comparaciones limpias
+  var hoyStr = hoy.getFullYear() + '-' +
+               String(hoy.getMonth()+1).padStart(2,'0') + '-' +
+               String(hoy.getDate()).padStart(2,'0');
+
   var dicVac = {};
   var maxAnioEnTabla = 0;
-
   for (var t = 1; t < dataTab.length; t++) {
     var anio = parseInt(dataTab[t][0]);
     var dias = parseInt(dataTab[t][1]);
@@ -568,64 +572,101 @@ function actualizarSaldosYAniversarios() {
   for (var i = 1; i < dataOp.length; i++) {
     if (String(dataOp[i][9]).trim().toUpperCase() !== "ACTIVO") continue;
 
-    var idOp     = dataOp[i][0];
+    var idOp     = String(dataOp[i][0]).trim();
     var fIngreso = (dataOp[i][8] instanceof Date) ? dataOp[i][8] : new Date(dataOp[i][8]);
     if (isNaN(fIngreso.getTime())) continue;
 
-    var aniosCumplidos = hoy.getFullYear() - fIngreso.getFullYear();
-    var aniversarioEsteAnio = new Date(hoy.getFullYear(), fIngreso.getMonth(), fIngreso.getDate());
-    if (hoy < aniversarioEsteAnio) aniosCumplidos--;
+    // ── Calcular años cumplidos y fechas de aniversario ──
+    var aniosCumplidos      = hoy.getFullYear() - fIngreso.getFullYear();
+    var anivEsteAnio        = new Date(hoy.getFullYear(), fIngreso.getMonth(), fIngreso.getDate());
+    if (hoy < anivEsteAnio) aniosCumplidos--;
 
-    var ultimoAniv = new Date(fIngreso.getFullYear() + aniosCumplidos, fIngreso.getMonth(), fIngreso.getDate());
-    var proxAniv   = new Date(fIngreso.getFullYear() + aniosCumplidos + 1, fIngreso.getMonth(), fIngreso.getDate());
+    var ultimoAniv   = new Date(fIngreso.getFullYear() + aniosCumplidos,     fIngreso.getMonth(), fIngreso.getDate());
+    var proxAniv     = new Date(fIngreso.getFullYear() + aniosCumplidos + 1,  fIngreso.getMonth(), fIngreso.getDate());
     var fraccionAnio = (hoy - ultimoAniv) / (proxAniv - ultimoAniv);
 
-    var sumaDiasSi = 0;
-    var tienePendientesAjuste = false;
+    // Fecha del último aniversario como string YYYY-MM-DD para comparar con Col Y
+    var ultimoAnivStr = ultimoAniv.getFullYear() + '-' +
+                        String(ultimoAniv.getMonth()+1).padStart(2,'0') + '-' +
+                        String(ultimoAniv.getDate()).padStart(2,'0');
 
+    // Col Y [24]: ULTIMO_PROCESO — guarda la fecha en que se hizo la última renovación
+    // Normalizar a YYYY-MM-DD aunque GAS lo haya interpretado como Date
+    var rawY = dataOp[i][24];
+    var ultimoProceso = "";
+    if (rawY instanceof Date && !isNaN(rawY.getTime())) {
+      ultimoProceso = rawY.getFullYear() + '-' +
+                      String(rawY.getMonth()+1).padStart(2,'0') + '-' +
+                      String(rawY.getDate()).padStart(2,'0');
+    } else {
+      ultimoProceso = String(rawY || "").trim();
+    }
+
+    // ── Sumar días APLICADO + CONSIDERAR=SI para este operador ──
+    var sumaDiasSi = 0;
     for (var j = 1; j < dataSol.length; j++) {
-      var idSolOp   = dataSol[j][1];
-      var estado    = String(dataSol[j][6]  || "").trim().toUpperCase();
-      var considerar = String(dataSol[j][12] || "").trim().toUpperCase();
-      if (Number(idSolOp) === Number(idOp) && estado === "APLICADO" && considerar === "SI") {
+      var idSolOp    = String(dataSol[j][1]).trim();
+      var estadoJ    = String(dataSol[j][6]  || "").trim().toUpperCase();
+      var considerarJ = String(dataSol[j][12] || "").trim().toUpperCase();
+      if (idSolOp === idOp && estadoJ === "APLICADO" && considerarJ === "SI") {
         sumaDiasSi += Number(dataSol[j][5] || 0);
-        tienePendientesAjuste = true;
       }
     }
 
-    if (hoy >= aniversarioEsteAnio && tienePendientesAjuste) {
-      var XX_diasAnterior = Number(dataOp[i][20] || 0);
-      var YY_tomados      = sumaDiasSi;
-      var ZZ_nuevos       = dicVac[aniosCumplidos] || dicVac[maxAnioEnTabla];
-      var anioPeriodoNota = hoy.getFullYear() - 1;
-      var anioNuevoPeriodo = hoy.getFullYear();
+    // ── BLOQUE A: Renovación de periodo (solo si cumplió aniversario Y no se ha procesado aún) ──
+    // Se considera "no procesado" cuando ultimoProceso NO contiene la fecha del último aniversario.
+    var yaProcesoEsteAniversario = (ultimoProceso === ultimoAnivStr);
 
+    if (hoy >= anivEsteAnio && aniosCumplidos >= 1 && !yaProcesoEsteAniversario) {
+      // XX: leer Col U [20] ANTES de modificarla — saldo real del periodo que cierra
+      // Para primer aniversario (aniosCumplidos=1) no había periodo anterior: siempre 0
+      var XX_diasAnterior        = aniosCumplidos === 1 ? 0 : Number(dataOp[i][20] || 0);
+      var YY_tomados             = sumaDiasSi;
+      var ZZ_nuevos              = dicVac[aniosCumplidos] || dicVac[maxAnioEnTabla];
+      // Periodo que CIERRA: año en que inició (un año antes del aniversario de hoy)
+      // Periodo que ABRE:   año en que cumple aniversario hoy
+      var anioAniversarioAnterior = ultimoAniv.getFullYear() - 1;
+      var anioNuevoPeriodo        = ultimoAniv.getFullYear();
+
+      // Marcar en SOLICITUDES: CONSIDERAR=NO, NOTA=Periodo AAAA
       for (var k = 1; k < dataSol.length; k++) {
-        var idSolK     = dataSol[k][1];
-        var estadoK    = String(dataSol[k][6]  || "").trim().toUpperCase();
+        var idSolK      = String(dataSol[k][1]).trim();
+        var estadoK     = String(dataSol[k][6]  || "").trim().toUpperCase();
         var considerarK = String(dataSol[k][12] || "").trim().toUpperCase();
-        if (Number(idSolK) === Number(idOp) && estadoK === "APLICADO" && considerarK === "SI") {
+        if (idSolK === idOp && estadoK === "APLICADO" && considerarK === "SI") {
           dataSol[k][12] = "NO";
-          dataSol[k][13] = "Periodo " + anioPeriodoNota;
+          dataSol[k][13] = "Periodo " + anioAniversarioAnterior;
         }
       }
 
-      var nuevoArranque = (XX_diasAnterior - YY_tomados) + ZZ_nuevos;
-      dataOp[i][20] = nuevoArranque;
-      dataOp[i][22] = "Tenía " + XX_diasAnterior + " días en el periodo " + anioPeriodoNota +
-                      " menos " + YY_tomados + " días tomados más " + ZZ_nuevos +
-                      " días nuevos del periodo " + anioNuevoPeriodo +
-                      ". Nuevo arranque de periodo " + nuevoArranque;
+      var saldoPendiente = XX_diasAnterior - YY_tomados; // puede ser negativo
+      var nuevoArranque  = saldoPendiente + ZZ_nuevos;
+
+      // Respaldar Col W en Col X antes de sobreescribir
+      var auditAnterior = String(dataOp[i][22] || "").trim();
+      if (auditAnterior !== "") dataOp[i][23] = auditAnterior;
+
+      dataOp[i][20] = nuevoArranque;  // Col U: DISP_PER_ANT
+      dataOp[i][15] = nuevoArranque;  // Col P: SALDO_INICIAL actualizado al nuevo arranque
+      dataOp[i][24] = ultimoAnivStr;  // Col Y: ULTIMO_PROCESO — marcar que este aniversario ya se procesó
+      dataOp[i][22] = "Tenía " + XX_diasAnterior + " días (" + anioAniversarioAnterior + ")" +
+                      " ha tomado " + YY_tomados + " días." +
+                      " Tiene " + saldoPendiente + " días + " + ZZ_nuevos +
+                      " días (" + anioNuevoPeriodo + ")= " + nuevoArranque + " días (inicio)";
+
+      // Resetear sumaDiasSi porque ya se procesaron en la renovación
       sumaDiasSi = 0;
     }
 
+    // ── BLOQUE B: Siempre actualizar días tomados, proporcionales y total ──
+    // sumaDiasSi aquí es 0 si hubo renovación, o los días actuales si no hubo renovación
     var diasSiguienteAnio = dicVac[aniosCumplidos + 1] || dicVac[maxAnioEnTabla];
     var propCalculado     = Math.floor(diasSiguienteAnio * fraccionAnio);
 
-    dataOp[i][18] = propCalculado;
-    dataOp[i][19] = sumaDiasSi;
-    dataOp[i][21] = propCalculado;
-    dataOp[i][14] = Number(dataOp[i][20]) + propCalculado;
+    dataOp[i][18] = propCalculado;          // Col S: PROPORCIONALES
+    dataOp[i][19] = sumaDiasSi;             // Col T: DIAS_TOMADOS del periodo actual
+    dataOp[i][21] = propCalculado;          // Col V: saldo actual (espejo de proporcionales)
+    dataOp[i][14] = Number(dataOp[i][20]) + propCalculado; // Col O: TOTAL_DISPONIBLE
   }
 
   shOp.getRange(1, 1, dataOp.length,  dataOp[0].length).setValues(dataOp);
@@ -772,19 +813,25 @@ function ejecutarDescuentoSaldos(idOp, dias) {
   for (var k = 1; k < dataOps.length; k++) {
     if (String(dataOps[k][0]) === String(idOp)) {
       var fila    = k + 1;
-      var tomados = Number(dataOps[k][19] || 0); // T
-      var ant     = Number(dataOps[k][20] || 0); // U
-      var act     = Number(dataOps[k][21] || 0); // V
+      // Índices base-0: T=[19], U=[20], V=[21]
+      // getRange() es base-1: col T=20, U=21, V=22, O=15
+      var tomados = Number(dataOps[k][19] || 0); // Col T: acumulado tomados del periodo
+      var ant     = Number(dataOps[k][20] || 0); // Col U: saldo periodo anterior
+      var act     = Number(dataOps[k][21] || 0); // Col V: saldo periodo actual (proporcionales)
 
+      // Descontar primero del saldo anterior y luego del actual
       var resto = dias;
       if (ant >= resto) { ant -= resto; resto = 0; }
       else              { resto -= ant; ant = 0;   }
       act -= resto;
 
-      sheetOps.getRange(fila, 20).setValue(tomados + dias); // T: acumulado tomados
-      sheetOps.getRange(fila, 21).setValue(ant);            // U: saldo anterior
-      sheetOps.getRange(fila, 22).setValue(act);            // V: saldo actual
-      sheetOps.getRange(fila, 15).setValue(ant + act);      // O: total disponible
+      sheetOps.getRange(fila, 20).setValue(tomados + dias); // Col T: acumular días tomados
+      sheetOps.getRange(fila, 21).setValue(ant);            // Col U: saldo anterior reducido
+      sheetOps.getRange(fila, 22).setValue(act);            // Col V: saldo actual reducido
+      sheetOps.getRange(fila, 15).setValue(ant + act);      // Col O: total disponible
+      // NOTA: Col P (SALDO_INICIAL) [getRange fila,16] NO se toca aquí intencionalmente.
+      // Col P guarda el arranque limpio del periodo para que actualizarSaldosYAniversarios
+      // pueda leerlo correctamente sin el efecto de los descuentos parciales.
       break;
     }
   }
@@ -812,16 +859,18 @@ function obtenerDatosConsulta() {
       .slice(0, 5)
       .map(function(r){
         return {
-          idSol:  r[0],
-          inicio: r[3] instanceof Date ? Utilities.formatDate(r[3], "GMT-6", "yyyy-MM-dd") : String(r[3]),
-          fin:    r[4] instanceof Date ? Utilities.formatDate(r[4], "GMT-6", "yyyy-MM-dd") : String(r[4]),
-          dias:   r[5],
-          estado: r[6],
-          obs:    String(r[9] || ''),
-          folio:  r[11],
-          histP:  r[14] || 0,
-          histS:  r[15] || 0,
-          histT:  r[16] || 0
+          idSol:      r[0],
+          inicio:     r[3] instanceof Date ? Utilities.formatDate(r[3], "GMT-6", "yyyy-MM-dd") : String(r[3]),
+          fin:        r[4] instanceof Date ? Utilities.formatDate(r[4], "GMT-6", "yyyy-MM-dd") : String(r[4]),
+          dias:       r[5],
+          estado:     r[6],
+          obs:        String(r[9]  || ''),
+          folio:      r[11],
+          considerar: String(r[12] || ''),
+          nota:       String(r[13] || ''),
+          histP:      r[14] || 0,
+          histS:      r[15] || 0,
+          histT:      r[16] || 0
         };
       });
 
@@ -856,17 +905,19 @@ function obtenerSolicitudesPaginadas(idOp, offset) {
     .slice(offset, offset + 5)
     .map(function(r){
       return {
-        idSol:  r[0],
-        inicio: r[3] instanceof Date ? Utilities.formatDate(r[3], "GMT-6", "yyyy-MM-dd") : String(r[3]),
-        fin:    r[4] instanceof Date ? Utilities.formatDate(r[4], "GMT-6", "yyyy-MM-dd") : String(r[4]),
-        dias:   r[5],
-        estado: r[6],
-        obs:    String(r[9] || ''),
-        folio:  r[11],
-        histP:  r[14] || 0,
-        histS:  r[15] || 0,
-        histT:  r[16] || 0,
-        hayMas: (offset + 5) < todas.length
+        idSol:      r[0],
+        inicio:     r[3] instanceof Date ? Utilities.formatDate(r[3], "GMT-6", "yyyy-MM-dd") : String(r[3]),
+        fin:        r[4] instanceof Date ? Utilities.formatDate(r[4], "GMT-6", "yyyy-MM-dd") : String(r[4]),
+        dias:       r[5],
+        estado:     r[6],
+        obs:        String(r[9]  || ''),
+        folio:      r[11],
+        considerar: String(r[12] || ''),
+        nota:       String(r[13] || ''),
+        histP:      r[14] || 0,
+        histS:      r[15] || 0,
+        histT:      r[16] || 0,
+        hayMas:     (offset + 5) < todas.length
       };
     });
 }
@@ -928,7 +979,7 @@ function crearVacante(datos) {
   newRow[iPuesto] = datos.puesto || "";
   newRow[iArea]   = datos.area   || "";
   newRow[iEstado] = "VACANTE";
-  newRow[iIngreso]= new Date();
+  newRow[iIngreso]= "";
   sheet.appendRow(newRow);
   return "OK";
 }
