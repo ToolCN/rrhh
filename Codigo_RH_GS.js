@@ -1,5 +1,5 @@
 // ═══════════════════════════════════════════════════════════════════
-//  CODIGO_RH_GS — Google Apps Script SEPARADO para Recursos Humanos
+//  CODIGO_RH_GS — Google Apps Script SEPARADO para Recursos Humanos (NUEVO)
 //  Vinculado a la misma hoja de cálculo del GS original
 // ═══════════════════════════════════════════════════════════════════
 
@@ -694,6 +694,7 @@ function obtenerSolicitudesEstado(estadoFiltro) {
         inicio:     dataSols[i][3] instanceof Date ? Utilities.formatDate(dataSols[i][3], "GMT", "yyyy-MM-dd") : dataSols[i][3],
         fin:        dataSols[i][4] instanceof Date ? Utilities.formatDate(dataSols[i][4], "GMT", "yyyy-MM-dd") : dataSols[i][4],
         dias:       dataSols[i][5],
+        estado:     dataSols[i][6],
         obs:        dataSols[i][9],
         folio:      dataSols[i][11]
       });
@@ -1098,58 +1099,100 @@ function obtenerCatalogosVacantes() {
     return parseFloat(String(v).replace(/[$,\s]/g, '')) || 0;
   }
 
+  // Columnas del TABULADOR: E(4)=CLAVO F(5)=VARILLA G(6)=BARRA H(7)=TORNILLO
+  // I(8)=TREFILADO/DECAPADO J(9)=TRAT_TERM K(10)=COLATADO L(11)=MANTTO M(12)=TALLER N(13)=INDIRECTOS
   var AREA_A_COL = {
-    'CLAVO':               4,
-    'VARILLA':             5,
-    'BARRA':               6,
-    'TORNILLO':            7,
-    'LAVADO':              7,
-    'TORNILLO CEVA':       7,
-    'TORNILLO FIDE-PIJAS': 7,
-    'TORNILLO HANREZ 1':   7,
-    'TORNILLO NBM I':      7,
-    'TORNILLO NBM II':     7,
-    'TORNILLO PIJAS':      7,
-    'TORNILLO PIJAS TOOL': 7,
-    'DECAPADO':            8,
-    'TREFILADO':           8,
-    'RECOCIDO':            9,
-    'TEMPLE Y REVENIDO':   9,
-    'TRAT_TERMICO':        9,
-    'COLATADO':            10,
-    'MANTTO':              11,
-    'MANTENIMIENTO':       11,
-    'TALLER':              12,
-    'TALLER MECANIZADO':   12,
-    'ADMINISTRATIVO':      13,
-    'CALIDAD':             13,
-    'EMBARQUES':           13,
-    'GENERALES':           13,
-    'INDIRECTOS':          13,
-    'SUPERVISION':         13
+    'CLAVO':                   4,
+    'VARILLA':                 5,
+    'BARRA':                   6,
+    'ESTAMPADO':               6,
+    'ESTIRADO':                6,
+    'TORNILLO':                7,
+    'LAVADO':                  7,
+    'TORNILLO CEVA':           7,
+    'TORNILLO FIDE-PIJAS':     7,
+    'TORNILLO FIDE PIJAS':     7,
+    'TORNILLO HANREZ 1':       7,
+    'TORNILLO HANREZ1':        7,
+    'TORNILLO HANREZ 2':       7,
+    'TORNILLO HANREZ2':        7,
+    'TORNILLO NBM I':          7,
+    'TORNILLO NBM 1':          7,
+    'TORNILLO NBM II':         7,
+    'TORNILLO NBM 2':          7,
+    'TORNILLO PIJAS':          7,
+    'TORNILLO PIJAS TOOL':     7,
+    'DECAPADO':                8,
+    'TREFILADO':               8,
+    'RECOCIDO':                9,
+    'TEMPLE Y REVENIDO':       9,
+    'TRAT_TERMICO':            9,
+    'TRAT TERMICO':            9,
+    'TRATAMIENTO TERMICO':     9,
+    'COLATADO':                10,
+    'MANTTO':                  11,
+    'MANTENIMIENTO':           11,
+    'TALLER':                  12,
+    'TALLER MECANIZADO':       12,
+    'TALLER MECANICO':         12,
+    'ADMINISTRATIVO':          13,
+    'CALIDAD':                 13,
+    'EMBARQUES':               13,
+    'GENERALES':               13,
+    'INDIRECTOS':              13,
+    'SUPERVISION':             13,
+    'MONTACARGAS':             13,
+    'LIMPIEZA':                13
   };
 
+  // Precalcula lista de puestos por índice de columna (1 sola pasada sobre el sheet)
+  function buildListaParaCol(dataT, colIdx) {
+    var lista = [];
+    for (var r = 1; r < dataT.length; r++) {
+      var celda = String(dataT[r][colIdx] || '').trim();
+      if (!celda) continue;
+      var diario  = limpiarNum(dataT[r][1]);
+      var diaInt  = limpiarNum(dataT[r][2]);
+      var semanal = limpiarNum(dataT[r][3]);
+      celda.split(',').map(function(x){ return x.trim(); }).filter(Boolean)
+        .forEach(function(puesto) {
+          if (!lista.some(function(x){ return x.puesto === puesto; })) {
+            lista.push({ puesto: puesto, diario: diario, diaInt: diaInt, semanal: semanal });
+          }
+        });
+    }
+    return lista;
+  }
+
   var tabulador = {};
-  var sheetT = ssRH.getSheetByName("TABULADOR");
+  var sheetT = ssRH.getSheetByName('TABULADOR');
   if (sheetT) {
     var dataT = sheetT.getDataRange().getValues();
+
+    // Cache por columna para no releer el sheet múltiples veces
+    var cacheCol = {};
+    function listaDeCol(c) {
+      if (!cacheCol[c]) cacheCol[c] = buildListaParaCol(dataT, c);
+      return cacheCol[c];
+    }
+
+    // 1. Indexar por todos los keys del mapa (nombres canónicos y aliases)
     Object.keys(AREA_A_COL).forEach(function(areaKey) {
-      var colIdx = AREA_A_COL[areaKey];
-      var lista = [];
-      for (var r = 1; r < dataT.length; r++) {
-        var celda = String(dataT[r][colIdx] || "").trim();
-        if (!celda) continue;
-        var diario  = limpiarNum(dataT[r][1]);
-        var diaInt  = limpiarNum(dataT[r][2]);
-        var semanal = limpiarNum(dataT[r][3]);
-        celda.split(',').map(function(x){ return x.trim(); }).filter(Boolean)
-          .forEach(function(puesto) {
-            if (!lista.some(function(x){ return x.puesto === puesto; })) {
-              lista.push({ puesto: puesto, diario: diario, diaInt: diaInt, semanal: semanal });
-            }
-          });
+      tabulador[areaKey] = listaDeCol(AREA_A_COL[areaKey]);
+    });
+
+    // 2. Indexar también por cada área real de OPERADORES para garantizar match exacto
+    areas.forEach(function(areaReal) {
+      var k = areaReal.toUpperCase().trim();
+      if (tabulador[k]) return; // ya cubierto por el mapa
+      // Buscar columna por coincidencia parcial como fallback
+      var colIdx = -1;
+      var keys = Object.keys(AREA_A_COL);
+      for (var i = 0; i < keys.length; i++) {
+        var mk = keys[i].toUpperCase().trim();
+        if (k.indexOf(mk) !== -1 || mk.indexOf(k) !== -1) { colIdx = AREA_A_COL[keys[i]]; break; }
       }
-      tabulador[areaKey] = lista;
+      tabulador[k] = colIdx >= 0 ? listaDeCol(colIdx) : [];
     });
   }
 
@@ -1282,6 +1325,14 @@ function obtenerActasPorEmpleado(nombreEmpleado) {
   return lista;
 }
 
+function _fmtHora(v){
+  if(!v) return '';
+  if(v instanceof Date) return Utilities.formatDate(v, Session.getScriptTimeZone(), 'HH:mm');
+  var s = String(v).trim();
+  if(/^\d{1,2}:\d{2}(:\d{2})?$/.test(s)) return s.substring(0,5);
+  if(/^\d{1,2}:\d{2}\s*(AM|PM)$/i.test(s)) return s;
+  return s;
+}
 function _fmtFechaActa(v) {
   if (!v || v === "") return "";
   if (v instanceof Date) {
@@ -1715,8 +1766,8 @@ function obtenerPermisosEmpleados(filtros) {
       departamento:    String(_g("DEPARTAMENTO")       || ""),
       puesto:          String(_g("PUESTO")             || ""),
       tipoPermiso:     String(_g("TIPO_PERMISO")       || ""),
-      horaSalida:      String(_g("HORA_SALIDA")        || ""),
-      horaRegreso:     String(_g("HORA_REGRESO")       || ""),
+      horaSalida:      _fmtHora(_g("HORA_SALIDA")),
+      horaRegreso:     _fmtHora(_g("HORA_REGRESO")),
       fechaInicio:     _fmtFechaActa(_g("FECHA_INICIO")),
       fechaFin:        _fmtFechaActa(_g("FECHA_FIN")),
       diasSolicitados: String(_g("DIAS_SOLICITADOS")   || ""),
@@ -1748,6 +1799,31 @@ function actualizarEstatusPermiso(folio, nuevoEstatus) {
     }
   }
   return "No encontrado";
+}
+
+// Aprobar permiso tipo PAGO_TIEMPO guardando también fecha/horas de pago
+function aprobarPermisoConPagoTiempo(datos) {
+  // datos: { folio, nuevoEstatus, fechaPagoTiempo, horaInicioPago, horaFinPago }
+  var ssRH  = SpreadsheetApp.openById(ID_HOJA_RH);
+  var sheet = ssRH.getSheetByName("PERMISOS_EMPLEADOS");
+  if (!sheet) return "Hoja no encontrada";
+  var data    = sheet.getDataRange().getValues();
+  var headers = data[0].map(function(h){ return String(h).toUpperCase().trim(); });
+  var iFolio  = _colIdx(headers, "FOLIO");            if (iFolio < 0) iFolio = 1;
+  var iEst    = _colIdx(headers, "ESTATUS");
+  var iFPago  = _colIdx(headers, "FECHA_PAGO_TIEMPO");
+  var iHIni   = _colIdx(headers, "HORA_INICIO_PAGO");
+  var iHFin   = _colIdx(headers, "HORA_FIN_PAGO");
+  for (var i = 1; i < data.length; i++) {
+    if (String(data[i][iFolio] || "") !== datos.folio) continue;
+    var row = i + 1;
+    if (iEst   > -1) sheet.getRange(row, iEst   + 1).setValue(datos.nuevoEstatus || "APROBADO");
+    if (iFPago > -1) sheet.getRange(row, iFPago + 1).setValue(datos.fechaPagoTiempo || "");
+    if (iHIni  > -1) sheet.getRange(row, iHIni  + 1).setValue(datos.horaInicioPago  || "");
+    if (iHFin  > -1) sheet.getRange(row, iHFin  + 1).setValue(datos.horaFinPago     || "");
+    return "OK";
+  }
+  return "Folio no encontrado: " + datos.folio;
 }
 
 // =================================================================================
