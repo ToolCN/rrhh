@@ -1,5 +1,5 @@
 // ═══════════════════════════════════════════════════════════════════
-//  CODIGO_RH_GS — Google Apps Script SEPARADO para Recursos Humanos (NUEVO)
+//  CODIGO_RH_GS — Google Apps Script SEPARADO para Recursos Humanos (NUEVO) OK bien
 //  Vinculado a la misma hoja de cálculo del GS original
 // ═══════════════════════════════════════════════════════════════════
 
