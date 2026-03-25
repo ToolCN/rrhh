@@ -146,6 +146,7 @@ function rhToast(tipo, titulo){
     .rh-worker-card:hover{box-shadow:0 4px 16px rgba(0,0,0,.11)!important}
     .rh-worker-card.modificado{background:#fffbeb;border-color:#ef4444!important;animation:rh-parpadeo 1.2s ease-in-out infinite}
     @keyframes rh-parpadeo{0%,100%{box-shadow:0 0 0 0 rgba(239,68,68,0);outline:2px solid #ef4444}50%{box-shadow:0 0 0 5px rgba(239,68,68,.25);outline:2px solid #ef4444}}
+    @keyframes apl-parpadeo{0%,100%{opacity:1}50%{opacity:.45}}
     .val-input.campo-modificado{background:#fed7aa!important;border-color:#ea580c!important}
     .field-row{background:#f8fafc;border:1px solid #e2e8f0;border-radius:8px;padding:5px 10px;display:flex;align-items:center;gap:6px}
     .field-row .lbl{font-size:.65rem;font-weight:800;color:#94a3b8;text-transform:uppercase;letter-spacing:.06em;white-space:nowrap;min-width:52px}
@@ -2361,18 +2362,37 @@ var apl_solicitudes=[], apl_seleccionados=new Set();
 
 function loadAplicar(){
   showLoader('Cargando autorizadas...');
+  // Primero carga las autorizadas
   google.script.run
     .withSuccessHandler(function(lista){
-      hideLoader();
       apl_solicitudes=lista||[];
       apl_seleccionados.clear();
-      document.getElementById('content-area').innerHTML=
-        '<div class="d-flex align-items-center justify-content-between mb-3">'
-        +'<h6 class="fw-bold m-0">Solicitudes Autorizadas por Aplicar</h6>'
-        +'<button class="btn btn-sm fw-bold rounded-pill px-3" style="background:var(--rh-color);color:white" id="apl-fab" style="display:none" onclick="apl_procesarLote()"><i class="fas fa-rocket me-1"></i>Aplicar Todas (<span id="apl-count">0</span>)</button>'
-        +'</div>'
-        +'<div id="apl-grid"></div>';
-      apl_render();
+      // Luego consulta cuántas hay pendientes por autorizar para la leyenda
+      google.script.run
+        .withSuccessHandler(function(pendientes){
+          hideLoader();
+          var nPend = (pendientes||[]).length;
+          var leyendaStyle, leyendaTxt;
+          if(nPend === 0){
+            leyendaStyle = 'background:#16a34a;color:white;border-radius:20px;padding:4px 14px;font-size:.78rem;font-weight:700;display:inline-flex;align-items:center;gap:6px';
+            leyendaTxt   = '✅ Sin solicitudes pendientes por autorizar';
+          } else {
+            leyendaStyle = 'background:#dc2626;color:white;border-radius:20px;padding:4px 14px;font-size:.78rem;font-weight:700;display:inline-flex;align-items:center;gap:6px;animation:apl-parpadeo 1s ease-in-out infinite';
+            leyendaTxt   = '⚠️ ' + nPend + ' solicitud' + (nPend===1?'':'es') + ' pendiente' + (nPend===1?'':'s') + ' por autorizar';
+          }
+          document.getElementById('content-area').innerHTML=
+            '<div class="d-flex align-items-center justify-content-between mb-3 flex-wrap gap-2">'
+            +'<h6 class="fw-bold m-0">Solicitudes Autorizadas por Aplicar</h6>'
+            +'<div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">'
+            +'<span style="'+leyendaStyle+'">'+leyendaTxt+'</span>'
+            +'<button class="btn btn-sm fw-bold rounded-pill px-3" style="background:var(--rh-color);color:white" id="apl-fab" onclick="apl_procesarLote()"><i class="fas fa-rocket me-1"></i>Aplicar Todas (<span id="apl-count">0</span>)</button>'
+            +'</div>'
+            +'</div>'
+            +'<div id="apl-grid"></div>';
+          apl_render();
+        })
+        .withFailureHandler(function(){ hideLoader(); })
+        .obtenerSolicitudesEstado('SOLICITADO');
     })
     .withFailureHandler(function(e){hideLoader();Swal.fire('Error',''+e,'error');})
     .obtenerSolicitudesEstado('AUTORIZADO');
