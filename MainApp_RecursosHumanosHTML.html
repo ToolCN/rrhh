@@ -2126,15 +2126,19 @@ function vac_imprimirFormato(folio, d){
 
       var op         = vac_activo;
       var totalAcum  = 0;
+      // Solo mostrar registros con CONSIDERAR = SI (periodo actual)
+      var histFiltrado = (hist||[]).filter(function(x){
+        return String(x.considerar||'').toUpperCase().trim() === 'SI';
+      });
       // Ordenar del más reciente al más antiguo y limitar a 10 registros visibles
-      var histOrdenado = (hist||[]).slice().reverse();
+      var histOrdenado = histFiltrado.slice().reverse();
       var MAX_HIST = 10;
       var histVisible = histOrdenado.slice(0, MAX_HIST);
       var htmlHist = histVisible.map(function(x){
         totalAcum += Number(x.dias);
         return '<tr><td>'+x.inicio+'</td><td>'+x.fin+'</td><td style="text-align:center">'+x.dias+'</td></tr>';
       }).join('');
-      // Acumular total real con todos los registros
+      // Acumular total real con todos los registros del periodo
       (histOrdenado.slice(MAX_HIST)).forEach(function(x){ totalAcum += Number(x.dias); });
 
       var pHist           = Number(op.dispAnt       || 0);

@@ -1,5 +1,5 @@
 // ═══════════════════════════════════════════════════════════════════
-//  CODIGO_RH_GS — Google Apps Script SEPARADO para Recursos Humanos (NUEVO) OK bien
+//  CODIGO_RH_GS — Google Apps Script SEPARADO para Recursos Humanos (NUEVO) OK bien Prueba
 //  Vinculado a la misma hoja de cálculo del GS original
 // ═══════════════════════════════════════════════════════════════════
 
@@ -548,6 +548,11 @@ function actualizarSaldosYAniversarios() {
   var shSol = ss.getSheetByName("SOLICITUDES");
   var shTab = ss.getSheetByName("TABLA_VACACIONES");
 
+  if (!shOp || !shSol || !shTab) {
+    console.error("actualizarSaldosYAniversarios: falta hoja OPERADORES, SOLICITUDES o TABLA_VACACIONES en el libro ID_HOJA_CALCULO.");
+    return;
+  }
+
   var dataOp  = shOp.getDataRange().getValues();
   var dataSol = shSol.getDataRange().getValues();
   var dataTab = shTab.getDataRange().getValues();
@@ -771,7 +776,8 @@ function obtenerHistorialPeriodo(idOperador) {
   var historial = [];
 
   for (var i = 1; i < data.length; i++) {
-    if (String(data[i][1]) === String(idOperador) && data[i][6] === "APLICADO") {
+    var considerar = String(data[i][12] || '').toUpperCase().trim();
+    if (String(data[i][1]) === String(idOperador) && data[i][6] === "APLICADO" && considerar === "SI") {
       historial.push({
         inicio: data[i][3] instanceof Date ? Utilities.formatDate(data[i][3], "GMT", "dd/MM/yyyy") : String(data[i][3]),
         fin:    data[i][4] instanceof Date ? Utilities.formatDate(data[i][4], "GMT", "dd/MM/yyyy") : String(data[i][4]),
