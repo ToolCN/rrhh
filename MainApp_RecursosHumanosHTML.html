@@ -92,7 +92,14 @@ function rhToast(tipo, titulo){
     #sidebar.collapsed .logo-collapsed{display:flex!important}
     #sidebar.collapsed .nav-link-custom{justify-content:center;padding:12px 0}
     #sidebar.collapsed .nav-link-custom i{margin:0}
-    .logo-box{padding:20px 16px 16px;border-bottom:1px solid rgba(255,255,255,.08);flex-shrink:0}
+    .logo-box{padding:16px 16px 12px;border-bottom:1px solid rgba(255,255,255,.08);flex-shrink:0}
+    .sidebar-user-box{padding:8px 12px 10px;border-bottom:1px solid rgba(255,255,255,.08);flex-shrink:0;display:flex;align-items:center;justify-content:space-between;gap:8px}
+    #sidebar.collapsed .sidebar-user-box{display:none}
+    .sidebar-user-name{font-size:.78rem;font-weight:700;color:white;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+    .sidebar-logout{background:none;border:none;cursor:pointer;color:#f87171;font-size:.72rem;font-weight:700;white-space:nowrap;padding:0;display:flex;align-items:center;gap:4px}
+    .sidebar-logout:hover{color:#fca5a5}
+    /* buscador flotante arriba del content-area */
+    #header-search-slot{display:none;padding:10px 24px 0;background:var(--bg);align-items:center;gap:8px;flex-shrink:0}
     .logo-expanded{display:flex;align-items:center;gap:10px}
     .logo-expanded img{width:38px;height:38px;object-fit:contain;border-radius:8px;background:white;padding:2px}
     .logo-text-box{display:flex;flex-direction:column;line-height:1.1}
@@ -101,7 +108,11 @@ function rhToast(tipo, titulo){
     .logo-collapsed{display:none;justify-content:center;align-items:center}
     .logo-collapsed img{width:36px;height:36px;object-fit:contain;border-radius:8px;background:white;padding:2px}
     .btn-toggle-sidebar{display:none}
-    .nav-container{padding:8px 8px;overflow-y:auto;flex:1}
+    .nav-container{padding:8px 8px;overflow-y:auto;flex:1;scrollbar-width:thin;scrollbar-color:#374151 #1e293b}
+    .nav-container::-webkit-scrollbar{width:5px}
+    .nav-container::-webkit-scrollbar-track{background:#1e293b;border-radius:99px}
+    .nav-container::-webkit-scrollbar-thumb{background:#4b5563;border-radius:99px}
+    .nav-container::-webkit-scrollbar-thumb:hover{background:#6b7280}
     .nav-section-label{font-size:.65rem;font-weight:700;color:#475569;letter-spacing:.1em;
       text-transform:uppercase;padding:12px 10px 4px;margin-top:4px}
     .nav-link-custom{display:flex;align-items:center;gap:10px;padding:10px 12px;border-radius:10px;
@@ -113,9 +124,6 @@ function rhToast(tipo, titulo){
 
     /* ── MAIN ── */
     #main{flex:1;display:flex;flex-direction:column;overflow:hidden;min-width:0}
-    .header-top{background:white;padding:14px 24px;border-bottom:1px solid #e2e8f0;
-      display:flex;align-items:center;justify-content:space-between;flex-shrink:0;
-      box-shadow:0 1px 4px rgba(0,0,0,.06)}
     #content-area{flex:1;overflow-y:auto;padding:20px 24px;background:var(--bg)}
 
     /* ── SPINNING REFRESH ── */
@@ -328,6 +336,15 @@ function rhToast(tipo, titulo){
              onerror="this.style.display='none'">
       </div>
     </div>
+    <div class="sidebar-user-box">
+      <div style="display:flex;align-items:center;gap:7px;min-width:0">
+        <i class="fas fa-user-circle" style="color:#94a3b8;font-size:1rem;flex-shrink:0"></i>
+        <span class="sidebar-user-name" id="userName">---</span>
+      </div>
+      <button class="sidebar-logout" onclick="logout()" title="Cerrar sesión">
+        <i class="fas fa-sign-out-alt"></i>Salir
+      </button>
+    </div>
     <div class="nav-container">
       <div class="nav-section-label" data-sec="general">General</div>
       <div id="link-dashboard" class="nav-link-custom" data-section="general" data-label="Dashboard" onclick="loadModule('DASHBOARD')">
@@ -431,30 +448,16 @@ function rhToast(tipo, titulo){
 
   <!-- MAIN -->
   <main id="main">
-    <div class="header-top">
-      <div>
-        <h3 id="module-title" class="fw-bold m-0" style="color:#0f172a;font-size:1.1rem">Panel de Control</h3>
-        <p class="text-muted small m-0" id="current-date"></p>
-      </div>
-      <div id="header-search-slot" style="display:none;flex:1;max-width:480px;margin:0 32px;align-items:center;gap:8px">
-        <input type="text" id="header-search-input" class="form-control" style="height:40px;font-size:.95rem;border-radius:10px" placeholder="🔍 Buscar trabajador...">
-        <button id="header-excel-btn" style="display:none;height:40px;padding:0 16px;background:#16a34a;color:white;border:none;border-radius:10px;font-weight:700;font-size:.85rem;white-space:nowrap;cursor:pointer">
-          <i class="fas fa-file-excel me-1"></i>Excel
-        </button>
-      </div>
-      <div class="d-flex align-items-center gap-3">
-        <button id="btn-refresh" onclick="refreshCurrentModule()" title="Actualizar vista"
-          style="background:none;border:none;cursor:pointer;padding:6px;border-radius:50%;transition:background .2s"
-          onmouseover="this.style.background='#f1f5f9'" onmouseout="this.style.background='none'">
-          <i id="refresh-icon" class="fas fa-sync-alt" style="color:#64748b;font-size:1.1rem"></i>
-        </button>
-        <div class="text-end">
-          <div class="fw-bold small" style="color:var(--rh-color)" id="userName">---</div>
-          <a class="text-danger fw-bold small" style="cursor:pointer;font-size:.75rem" onclick="logout()">
-            <i class="fas fa-sign-out-alt me-1"></i>Salir
-          </a>
-        </div>
-      </div>
+    <div id="header-search-slot" style="display:none;padding:10px 24px 0;background:var(--bg);align-items:center;gap:8px;flex-shrink:0">
+      <input type="text" id="header-search-input" class="form-control" style="height:38px;font-size:.9rem;border-radius:10px;flex:1;max-width:460px" placeholder="🔍 Buscar trabajador...">
+      <button id="header-excel-btn" style="display:none;height:38px;padding:0 14px;background:#16a34a;color:white;border:none;border-radius:10px;font-weight:700;font-size:.83rem;white-space:nowrap;cursor:pointer">
+        <i class="fas fa-file-excel me-1"></i>Excel
+      </button>
+      <button id="btn-refresh" onclick="refreshCurrentModule()" title="Actualizar vista"
+        style="background:white;border:1px solid #e2e8f0;cursor:pointer;padding:6px 10px;border-radius:8px;margin-left:auto;transition:background .2s"
+        onmouseover="this.style.background='#f1f5f9'" onmouseout="this.style.background='white'">
+        <i id="refresh-icon" class="fas fa-sync-alt" style="color:#64748b;font-size:1rem"></i>
+      </button>
     </div>
     <div id="content-area"></div>
   </main>
@@ -486,9 +489,14 @@ function _headerSearch(show, placeholder, onInput, showExcel, onExcel){
     slot.style.display = 'none';
     input.oninput = null;
     excel.onclick = null;
+    // ocultar refresh también cuando no hay búsqueda activa
+    var btnRef=document.getElementById('btn-refresh');
+    if(btnRef) btnRef.style.display='none';
     return;
   }
   slot.style.display = 'flex';
+  var btnRef2=document.getElementById('btn-refresh');
+  if(btnRef2) btnRef2.style.display='';
   input.placeholder = placeholder || '🔍 Buscar...';
   input.value = '';
   input.oninput = onInput || null;
@@ -644,19 +652,14 @@ function initSidebar() {
 // ══════════════════════════════════════════════════════════
 //  FECHA
 // ══════════════════════════════════════════════════════════
-function updateDate(){
-  var d = new Date();
-  var dias = ['Domingo','Lunes','Martes','Miércoles','Jueves','Viernes','Sábado'];
-  var meses = ['enero','febrero','marzo','abril','mayo','junio','julio','agosto','septiembre','octubre','noviembre','diciembre'];
-  document.getElementById('current-date').innerText = dias[d.getDay()]+', '+d.getDate()+' de '+meses[d.getMonth()]+' '+d.getFullYear();
-}
+function updateDate(){ /* eliminado — fecha removida del header */ }
 
 // ══════════════════════════════════════════════════════════
 //  LOGIN
 // ══════════════════════════════════════════════════════════
 window.onload = function() {
   initSidebar();
-  updateDate();
+  /* updateDate eliminado */
   showLoader('Iniciando...');
   google.script.run
     .withSuccessHandler(function(u) {
@@ -778,7 +781,7 @@ function loadModule(mod){
   document.querySelectorAll('.nav-link-custom').forEach(function(el){el.classList.remove('active');});
   var modDef=MODULOS_RH.find(function(m){return m.id===mod;});
   if(modDef){var el=document.getElementById(modDef.link);if(el)el.classList.add('active');}
-  document.getElementById('module-title').innerText=MODULE_TITLES[mod]||mod;
+  /* module-title eliminado del header */
   _headerSearch(false);
   document.getElementById('fab-bar').classList.remove('visible');
   if(mod==='DASHBOARD')     loadDashboardRH();
@@ -834,7 +837,6 @@ function refreshCurrentModule(){
   else{done();}
 }
 function mostrarSinPermisos(){
-  document.getElementById('module-title').innerText='Sin acceso';
   document.getElementById('content-area').innerHTML=
     '<div style="display:flex;flex-direction:column;align-items:center;justify-content:center;min-height:60vh;text-align:center;padding:40px">'
     +'<div style="font-size:5rem">😢</div>'
@@ -849,6 +851,9 @@ function mostrarSinPermisos(){
 var dash_mes = new Date().getMonth();
 var dash_anio = new Date().getFullYear();
 var MESES_NOMBRES = ['Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre'];
+// ── Variables de navegación de mes para módulos Incidencias ──
+var inc_mes  = new Date().getMonth();
+var inc_anio = new Date().getFullYear();
 
 function loadDashboardRH(){
   showLoader('Cargando dashboard...');
@@ -3816,6 +3821,8 @@ function _incStat(label, val, color, icon){
 //  1. AUSENTISMO
 // ══════════════════════════════════════════════════════════════════════
 function loadAusentismo(){
+  inc_mes  = new Date().getMonth();
+  inc_anio = new Date().getFullYear();
   showLoader('Cargando módulo de Ausentismo...');
   google.script.run
     .withSuccessHandler(function(cat){
@@ -3825,6 +3832,49 @@ function loadAusentismo(){
     })
     .withFailureHandler(function(e){hideLoader();Swal.fire('Error',''+e,'error');})
     .obtenerCatalogosIncidencias();
+}
+function inc_cambiarMes(delta, modulo){
+  inc_mes += delta;
+  if(inc_mes < 0){ inc_mes=11; inc_anio--; }
+  if(inc_mes > 11){ inc_mes=0; inc_anio++; }
+  // Actualizar etiqueta del navegador en pantalla
+  var spans=document.querySelectorAll('.inc-nav-mes-label');
+  spans.forEach(function(s){ s.innerText=MESES_NOMBRES[inc_mes]+' '+inc_anio; });
+  if(modulo==='AUSENTISMO')    _incCargarAusentismoMes();
+  else if(modulo==='RETARDOS') _incCargarRetardosMes();
+  else if(modulo==='PERMISOS') _incCargarPermisosMes();
+}
+function _incCargarAusentismoMes(){
+  var m=inc_mes, a=inc_anio;
+  showLoader('Cargando ausentismo de '+MESES_NOMBRES[m]+' '+a+'...');
+  google.script.run
+    .withSuccessHandler(function(lista){hideLoader();renderTablaAusentismo(lista||[]);})
+    .withFailureHandler(function(e){hideLoader();Swal.fire('Error',''+e,'error');})
+    .obtenerAusentismo({mes:m, anio:a});
+}
+function _incCargarRetardosMes(){
+  var m=inc_mes, a=inc_anio;
+  showLoader('Cargando retardos de '+MESES_NOMBRES[m]+' '+a+'...');
+  google.script.run
+    .withSuccessHandler(function(lista){hideLoader();renderTablaRetardos(lista||[]);})
+    .withFailureHandler(function(e){hideLoader();Swal.fire('Error',''+e,'error');})
+    .obtenerRetardos({mes:m, anio:a});
+}
+function _incCargarPermisosMes(){
+  var m=inc_mes, a=inc_anio;
+  showLoader('Cargando permisos de '+MESES_NOMBRES[m]+' '+a+'...');
+  google.script.run
+    .withSuccessHandler(function(lista){hideLoader();renderTablaPermisos(lista||[]);})
+    .withFailureHandler(function(e){hideLoader();Swal.fire('Error',''+e,'error');})
+    .obtenerPermisosEmpleados({mes:m, anio:a});
+}
+function _incNavMes(modulo){
+  var mesTxt=MESES_NOMBRES[inc_mes]+' '+inc_anio;
+  return '<div style="display:flex;align-items:center;gap:6px">'
+    +'<button onclick="inc_cambiarMes(-1,\''+modulo+'\')" style="background:#f1f5f9;border:none;border-radius:50%;width:28px;height:28px;cursor:pointer;font-size:.9rem">&#8249;</button>'
+    +'<span class="inc-nav-mes-label" style="font-weight:700;color:#0f172a;min-width:120px;text-align:center;font-size:.85rem">'+mesTxt+'</span>'
+    +'<button onclick="inc_cambiarMes(1,\''+modulo+'\')" style="background:#f1f5f9;border:none;border-radius:50%;width:28px;height:28px;cursor:pointer;font-size:.9rem">&#8250;</button>'
+    +'</div>';
 }
 
 function renderFormAusentismo(){
@@ -3838,7 +3888,7 @@ function renderFormAusentismo(){
     +'<i class="fas fa-user-clock" style="color:#ea580c;font-size:1.4rem"></i></div>'
     +'<div><h5 class="fw-bold m-0">Registrar Ausentismo</h5>'
     +'<p class="text-muted small m-0">Registra la falta del empleado</p></div></div>'
-    +'<button class="btn btn-outline-secondary rounded-pill btn-sm" onclick="loadConsultaAusentismo()">'
+    +'<button class="btn btn-sm fw-bold rounded-pill px-3" style="background:#1a237e;color:white" onclick="loadConsultaAusentismo()">'
     +'<i class="fas fa-list me-1"></i>Ver registros</button></div>'
 
     +'<div class="row g-3 mb-4">'
@@ -3911,11 +3961,12 @@ function aus_guardar(){
 }
 
 function loadConsultaAusentismo(){
-  showLoader('Cargando registros...');
+  var m=inc_mes, a=inc_anio;
+  showLoader('Cargando ausentismo de '+MESES_NOMBRES[m]+' '+a+'...');
   google.script.run
     .withSuccessHandler(function(lista){hideLoader();renderTablaAusentismo(lista||[]);})
     .withFailureHandler(function(e){hideLoader();Swal.fire('Error',''+e,'error');})
-    .obtenerAusentismo({});
+    .obtenerAusentismo({mes:m, anio:a});
 }
 
 function renderTablaAusentismo(lista){
@@ -3931,8 +3982,11 @@ function renderTablaAusentismo(lista){
     +'<i class="fas fa-user-clock" style="color:#ea580c;font-size:1.4rem"></i></div>'
     +'<div><h5 class="fw-bold m-0">Registros de Ausentismo</h5>'
     +'<p class="text-muted small m-0">Historial de faltas</p></div></div>'
+    +'<div class="d-flex align-items-center gap-2">'
+    +_incNavMes('AUSENTISMO')
     +'<button class="btn fw-bold rounded-pill px-4" style="background:#ea580c;color:white" onclick="loadAusentismo()">'
-    +'<i class="fas fa-plus me-2"></i>Nuevo Registro</button></div>'
+    +'<i class="fas fa-plus me-2"></i>Nuevo Registro</button>'
+    +'</div></div>'
     +'<div class="row g-3 mb-4">'
     +_incStat('Total Faltas',total,'#ea580c','fa-user-slash')
     +_incStat('Justificadas',just,'#16a34a','fa-check-circle')
@@ -3947,12 +4001,13 @@ function renderTablaAusentismo(lista){
     +'<thead class="table-light"><tr><th>Folio</th><th>Fecha</th><th>Empleado</th><th>Área</th><th>Turno</th><th>Motivo</th><th>Justificado</th><th></th></tr></thead>'
     +'<tbody id="tbody-aus">'
     +(lista.length===0?'<tr><td colspan="8" class="text-center text-muted py-5">Sin registros</td></tr>'
-      :lista.map(function(r){ return _rowAus(r); }).join(''))
+      :(_rhSet('aus',lista),lista.map(function(r,i){ return _rowAus(r,i); }).join('')))
     +'</tbody></table></div></div>';
   window._ausCache=lista;
+  setTimeout(_ausBindEvents,0);
 }
 
-function _rowAus(r){
+function _rowAus(r, idx){
   var just=(r.justificado||'NO').toUpperCase()==='SI';
   var badge=just
     ?'<span class="badge" style="background:#dcfce7;color:#16a34a">Sí</span>'
@@ -3965,9 +4020,10 @@ function _rowAus(r){
     +'<td class="small">'+(r.turno||'—')+'</td>'
     +'<td class="small">'+r.motivo+'</td>'
     +'<td>'+badge+'</td>'
-    +'<td><button class="btn btn-sm btn-outline-danger rounded-pill" style="font-size:.7rem"'
-    +' onclick="incEliminar(\''+r.folio+'\',\'AUSENTISMO\',loadConsultaAusentismo)">'
-    +'<i class="fas fa-trash me-1"></i>Eliminar</button></td></tr>';
+    +'<td><div class="d-flex gap-1">'
+    +'<button class="btn btn-sm btn-outline-warning rounded-pill" style="font-size:.7rem" data-accion="aus-editar" data-idx="'+idx+'"><i class="fas fa-edit me-1"></i>Editar</button>'
+    +'<button class="btn btn-sm btn-outline-danger rounded-pill" style="font-size:.7rem" data-accion="aus-eliminar" data-folio="'+r.folio+'"><i class="fas fa-trash me-1"></i>Eliminar</button>'
+    +'</div></td></tr>';
 }
 
 function _ausFiltrar(){
@@ -3979,6 +4035,86 @@ function _ausFiltrar(){
   });
 }
 
+function _ausBindEvents(){
+  var area=document.getElementById('content-area');
+  if(!area) return;
+  if(area._ausHandler) area.removeEventListener('click',area._ausHandler);
+  area._ausHandler=function(ev){
+    var btn=ev.target.closest('[data-accion]');
+    if(!btn) return;
+    var ac=btn.getAttribute('data-accion');
+    var folio=btn.getAttribute('data-folio')||'';
+    var idx=parseInt(btn.getAttribute('data-idx')||'0',10);
+    var r=_rhGet('aus',idx);
+    if(ac==='aus-editar') _ausModalEditar(r);
+    else if(ac==='aus-eliminar') incEliminar(folio,'AUSENTISMO',loadConsultaAusentismo);
+  };
+  area.addEventListener('click',area._ausHandler);
+}
+function _ausModalEditar(r){
+  if(!r) return;
+  var optsMotivo=MOTIVOS_AUSENTISMO.map(function(m){
+    return '<option'+(r.motivo===m?' selected':'')+'>'+m+'</option>';
+  }).join('');
+  var fechaInput='';
+  if(r.fecha && r.fecha.indexOf('/')>-1){var p=r.fecha.split('/');fechaInput=p[2]+'-'+p[1]+'-'+p[0];}
+  else fechaInput=r.fecha||'';
+  Swal.fire({
+    title:'Editar Ausentismo — '+r.folio,
+    width:'580px',
+    html:'<div class="text-start row g-2">'
+      +'<div class="col-12"><label class="form-label small fw-bold">Empleado</label>'
+      +'<input class="form-control form-control-sm" value="'+(r.empleado||'')+'" readonly style="background:#f8fafc"></div>'
+      +'<div class="col-md-6"><label class="form-label small fw-bold">Fecha</label>'
+      +'<input id="aus-ed-fecha" type="date" class="form-control form-control-sm" value="'+fechaInput+'"></div>'
+      +'<div class="col-md-6"><label class="form-label small fw-bold">Turno</label>'
+      +'<select id="aus-ed-turno" class="form-select form-select-sm">'
+      +'<option'+(r.turno==='MATUTINO'?' selected':'')+'>MATUTINO</option>'
+      +'<option'+(r.turno==='VESPERTINO'?' selected':'')+'>VESPERTINO</option>'
+      +'<option'+(r.turno==='NOCTURNO'?' selected':'')+'>NOCTURNO</option>'
+      +'</select></div>'
+      +'<div class="col-md-6"><label class="form-label small fw-bold">Motivo</label>'
+      +'<select id="aus-ed-motivo" class="form-select form-select-sm"><option value="">— Seleccionar —</option>'+optsMotivo+'</select></div>'
+      +'<div class="col-md-6"><label class="form-label small fw-bold">¿Justificado?</label>'
+      +'<select id="aus-ed-just" class="form-select form-select-sm">'
+      +'<option value="NO"'+(r.justificado==='NO'?' selected':'')+'>No</option>'
+      +'<option value="SI"'+(r.justificado==='SI'?' selected':'')+'>Sí</option>'
+      +'</select></div>'
+      +'<div class="col-12"><label class="form-label small fw-bold">Documento de soporte</label>'
+      +'<input id="aus-ed-doc" class="form-control form-control-sm" value="'+(r.documento||r.documentoSoporte||'')+'"></div>'
+      +'<div class="col-12"><label class="form-label small fw-bold">Observaciones</label>'
+      +'<input id="aus-ed-obs" class="form-control form-control-sm" value="'+(r.observaciones||'')+'"></div>'
+      +'</div>',
+    showCancelButton:true,
+    confirmButtonText:'<i class="fas fa-save me-1"></i>Guardar',
+    cancelButtonText:'Cancelar',confirmButtonColor:'#ea580c',
+    preConfirm:function(){
+      var f=document.getElementById('aus-ed-fecha').value;
+      if(!f){Swal.showValidationMessage('La fecha es obligatoria');return false;}
+      var p=f.split('-');
+      return {
+        folio:      r.folio,
+        fecha:      p.length===3?p[2]+'/'+p[1]+'/'+p[0]:f,
+        turno:      document.getElementById('aus-ed-turno').value,
+        motivo:     document.getElementById('aus-ed-motivo').value,
+        justificado:document.getElementById('aus-ed-just').value,
+        documento:  document.getElementById('aus-ed-doc').value,
+        observaciones:document.getElementById('aus-ed-obs').value
+      };
+    }
+  }).then(function(res){
+    if(!res.isConfirmed) return;
+    toggleSaving(true,'Guardando...');
+    google.script.run
+      .withSuccessHandler(function(r){
+        toggleSaving(false);
+        if(r==='OK'){rhToast('success','✅ Registro actualizado');setTimeout(loadConsultaAusentismo,1200);}
+        else Swal.fire('Error',r,'error');
+      })
+      .withFailureHandler(function(e){toggleSaving(false);Swal.fire('Error',''+e,'error');})
+      .editarRegistroIncidencia({hoja:'AUSENTISMO', campos:res.value});
+  });
+}
 // ══════════════════════════════════════════════════════════════════════
 //  2. RETARDOS
 // ══════════════════════════════════════════════════════════════════════
@@ -4003,7 +4139,7 @@ function renderFormRetardo(){
     +'<i class="fas fa-clock" style="color:#ea580c;font-size:1.4rem"></i></div>'
     +'<div><h5 class="fw-bold m-0">Registrar Retardo</h5>'
     +'<p class="text-muted small m-0">Registra la llegada tardía del empleado</p></div></div>'
-    +'<button class="btn btn-outline-secondary rounded-pill btn-sm" onclick="loadConsultaRetardos()">'
+    +'<button class="btn btn-sm fw-bold rounded-pill px-3" style="background:#1a237e;color:white" onclick="loadConsultaRetardos()">'
     +'<i class="fas fa-list me-1"></i>Ver registros</button></div>'
 
     +'<div class="row g-3 mb-4">'
@@ -4088,11 +4224,12 @@ function ret_guardar(){
 }
 
 function loadConsultaRetardos(){
-  showLoader('Cargando retardos...');
+  var m=inc_mes, a=inc_anio;
+  showLoader('Cargando retardos de '+MESES_NOMBRES[m]+' '+a+'...');
   google.script.run
     .withSuccessHandler(function(lista){hideLoader();renderTablaRetardos(lista||[]);})
     .withFailureHandler(function(e){hideLoader();Swal.fire('Error',''+e,'error');})
-    .obtenerRetardos({});
+    .obtenerRetardos({mes:m, anio:a});
 }
 
 function renderTablaRetardos(lista){
@@ -4108,8 +4245,11 @@ function renderTablaRetardos(lista){
     +'<i class="fas fa-clock" style="color:#ea580c;font-size:1.4rem"></i></div>'
     +'<div><h5 class="fw-bold m-0">Registros de Retardos</h5>'
     +'<p class="text-muted small m-0">Historial de llegadas tardías</p></div></div>'
+    +'<div class="d-flex align-items-center gap-2">'
+    +_incNavMes('RETARDOS')
     +'<button class="btn fw-bold rounded-pill px-4" style="background:#ea580c;color:white" onclick="loadRetardos()">'
-    +'<i class="fas fa-plus me-2"></i>Nuevo Registro</button></div>'
+    +'<i class="fas fa-plus me-2"></i>Nuevo Registro</button>'
+    +'</div></div>'
     +'<div class="row g-3 mb-4">'
     +_incStat('Total Retardos',total,'#ea580c','fa-clock')
     +_incStat('Justificados',just,'#16a34a','fa-check-circle')
@@ -4124,12 +4264,13 @@ function renderTablaRetardos(lista){
     +'<thead class="table-light"><tr><th>Folio</th><th>Fecha</th><th>Empleado</th><th>Área</th><th>Turno</th><th>H. Prog.</th><th>H. Real</th><th>Min.</th><th>Just.</th><th></th></tr></thead>'
     +'<tbody id="tbody-ret">'
     +(lista.length===0?'<tr><td colspan="10" class="text-center text-muted py-5">Sin registros</td></tr>'
-      :lista.map(function(r){return _rowRet(r);}).join(''))
+      :(_rhSet('ret',lista),lista.map(function(r,i){return _rowRet(r,i);}).join('')))
     +'</tbody></table></div></div>';
   window._retCache=lista;
+  setTimeout(_retBindEvents,0);
 }
 
-function _rowRet(r){
+function _rowRet(r, idx){
   var just=(r.justificado||'NO').toUpperCase()==='SI';
   var badge=just
     ?'<span class="badge" style="background:#dcfce7;color:#16a34a">Sí</span>'
@@ -4146,9 +4287,10 @@ function _rowRet(r){
     +'<td class="small">'+(r.horaReal||'—')+'</td>'
     +'<td><span class="fw-bold" style="color:'+minColor+'">'+min+'</span></td>'
     +'<td>'+badge+'</td>'
-    +'<td><button class="btn btn-sm btn-outline-danger rounded-pill" style="font-size:.7rem"'
-    +' onclick="incEliminar(\''+r.folio+'\',\'RETARDOS\',loadConsultaRetardos)">'
-    +'<i class="fas fa-trash me-1"></i>Eliminar</button></td></tr>';
+    +'<td><div class="d-flex gap-1">'
+    +'<button class="btn btn-sm btn-outline-warning rounded-pill" style="font-size:.7rem" data-accion="ret-editar" data-idx="'+idx+'"><i class="fas fa-edit me-1"></i>Editar</button>'
+    +'<button class="btn btn-sm btn-outline-danger rounded-pill" style="font-size:.7rem" data-accion="ret-eliminar" data-folio="'+r.folio+'"><i class="fas fa-trash me-1"></i>Eliminar</button>'
+    +'</div></td></tr>';
 }
 
 function _retFiltrar(){
@@ -4160,16 +4302,110 @@ function _retFiltrar(){
   });
 }
 
+function _retBindEvents(){
+  var area=document.getElementById('content-area');
+  if(!area) return;
+  if(area._retHandler) area.removeEventListener('click',area._retHandler);
+  area._retHandler=function(ev){
+    var btn=ev.target.closest('[data-accion]');
+    if(!btn) return;
+    var ac=btn.getAttribute('data-accion');
+    var folio=btn.getAttribute('data-folio')||'';
+    var idx=parseInt(btn.getAttribute('data-idx')||'0',10);
+    var r=_rhGet('ret',idx);
+    if(ac==='ret-editar') _retModalEditar(r);
+    else if(ac==='ret-eliminar') incEliminar(folio,'RETARDOS',loadConsultaRetardos);
+  };
+  area.addEventListener('click',area._retHandler);
+}
+function _retModalEditar(r){
+  if(!r) return;
+  var fechaInput='';
+  if(r.fecha && r.fecha.indexOf('/')>-1){var p=r.fecha.split('/');fechaInput=p[2]+'-'+p[1]+'-'+p[0];}
+  else fechaInput=r.fecha||'';
+  Swal.fire({
+    title:'Editar Retardo — '+r.folio,
+    width:'580px',
+    html:'<div class="text-start row g-2">'
+      +'<div class="col-12"><label class="form-label small fw-bold">Empleado</label>'
+      +'<input class="form-control form-control-sm" value="'+(r.empleado||'')+'" readonly style="background:#f8fafc"></div>'
+      +'<div class="col-md-6"><label class="form-label small fw-bold">Fecha</label>'
+      +'<input id="ret-ed-fecha" type="date" class="form-control form-control-sm" value="'+fechaInput+'"></div>'
+      +'<div class="col-md-6"><label class="form-label small fw-bold">Turno</label>'
+      +'<select id="ret-ed-turno" class="form-select form-select-sm">'
+      +'<option'+(r.turno==='MATUTINO'?' selected':'')+'>MATUTINO</option>'
+      +'<option'+(r.turno==='VESPERTINO'?' selected':'')+'>VESPERTINO</option>'
+      +'<option'+(r.turno==='NOCTURNO'?' selected':'')+'>NOCTURNO</option>'
+      +'</select></div>'
+      +'<div class="col-md-4"><label class="form-label small fw-bold">Hora programada</label>'
+      +'<input id="ret-ed-hprog" type="time" class="form-control form-control-sm" value="'+(r.horaProgramada||'')+'"></div>'
+      +'<div class="col-md-4"><label class="form-label small fw-bold">Hora real</label>'
+      +'<input id="ret-ed-hreal" type="time" class="form-control form-control-sm" value="'+(r.horaReal||'')+'"></div>'
+      +'<div class="col-md-4"><label class="form-label small fw-bold">Minutos retardo</label>'
+      +'<input id="ret-ed-min" type="number" min="0" class="form-control form-control-sm" value="'+(r.minutosRetardo||0)+'"></div>'
+      +'<div class="col-md-6"><label class="form-label small fw-bold">¿Justificado?</label>'
+      +'<select id="ret-ed-just" class="form-select form-select-sm">'
+      +'<option value="NO"'+(r.justificado==='NO'?' selected':'')+'>No</option>'
+      +'<option value="SI"'+(r.justificado==='SI'?' selected':'')+'>Sí</option>'
+      +'</select></div>'
+      +'<div class="col-12"><label class="form-label small fw-bold">Observaciones</label>'
+      +'<input id="ret-ed-obs" class="form-control form-control-sm" value="'+(r.observaciones||'')+'"></div>'
+      +'</div>',
+    showCancelButton:true,
+    confirmButtonText:'<i class="fas fa-save me-1"></i>Guardar',
+    cancelButtonText:'Cancelar',confirmButtonColor:'#ea580c',
+    preConfirm:function(){
+      var f=document.getElementById('ret-ed-fecha').value;
+      if(!f){Swal.showValidationMessage('La fecha es obligatoria');return false;}
+      var p=f.split('-');
+      return {
+        folio:        r.folio,
+        fecha:        p.length===3?p[2]+'/'+p[1]+'/'+p[0]:f,
+        turno:        document.getElementById('ret-ed-turno').value,
+        horaProgramada:document.getElementById('ret-ed-hprog').value,
+        horaReal:     document.getElementById('ret-ed-hreal').value,
+        minutosRetardo:document.getElementById('ret-ed-min').value,
+        justificado:  document.getElementById('ret-ed-just').value,
+        observaciones:document.getElementById('ret-ed-obs').value
+      };
+    }
+  }).then(function(res){
+    if(!res.isConfirmed) return;
+    toggleSaving(true,'Guardando...');
+    google.script.run
+      .withSuccessHandler(function(r){
+        toggleSaving(false);
+        if(r==='OK'){rhToast('success','✅ Registro actualizado');setTimeout(loadConsultaRetardos,1200);}
+        else Swal.fire('Error',r,'error');
+      })
+      .withFailureHandler(function(e){toggleSaving(false);Swal.fire('Error',''+e,'error');})
+      .editarRegistroIncidencia({hoja:'RETARDOS', campos:res.value});
+  });
+}
 // ══════════════════════════════════════════════════════════════════════
 //  3. PERMISOS DE EMPLEADOS
 // ══════════════════════════════════════════════════════════════════════
 function loadPermisosEmp(){
+  inc_mes  = new Date().getMonth();
+  inc_anio = new Date().getFullYear();
   showLoader('Cargando módulo de Permisos...');
   google.script.run
     .withSuccessHandler(function(cat){
       hideLoader();
       _incCat=cat.empleados||[];
       renderFormPermiso();
+      // Cargar contador de pendientes
+      google.script.run
+        .withSuccessHandler(function(lista){
+          var pend=(lista||[]).filter(function(r){return (r.estatus||'').toUpperCase()==='PENDIENTE';}).length;
+          var badge=document.getElementById('per-badge-pendientes');
+          if(badge){
+            if(pend>0){ badge.innerText='⚠️ '+pend+' permiso'+(pend===1?'':'s')+' pendiente'+(pend===1?'':'s'); badge.style.display='inline'; }
+            else { badge.style.display='none'; }
+          }
+        })
+        .withFailureHandler(function(){})
+        .obtenerPermisosEmpleados({});
     })
     .withFailureHandler(function(e){hideLoader();Swal.fire('Error',''+e,'error');})
     .obtenerCatalogosIncidencias();
@@ -4188,8 +4424,11 @@ function renderFormPermiso(){
     +'<i class="fas fa-calendar-minus" style="color:#ea580c;font-size:1.4rem"></i></div>'
     +'<div><h5 class="fw-bold m-0">Solicitar Permiso</h5>'
     +'<p class="text-muted small m-0">Registra el permiso del empleado</p></div></div>'
-    +'<button class="btn btn-sm fw-bold rounded-pill px-3" style="background:#1a237e;color:white;animation:per-parpadeo 1.2s infinite" onclick="loadConsultaPermisos()">'
-    +'<i class="fas fa-list me-1"></i>Ver registros</button></div>'
+    +'<div class="d-flex align-items-center gap-2">'
+    +'<span id="per-badge-pendientes" style="display:none;color:#dc2626;font-weight:700;font-size:.82rem;animation:per-parpadeo 1.2s infinite"></span>'
+    +'<button class="btn btn-sm fw-bold rounded-pill px-3" style="background:#1a237e;color:white" onclick="loadConsultaPermisos()">'
+    +'<i class="fas fa-list me-1"></i>Ver registros</button>'
+    +'</div></div>'
     +'<style>@keyframes per-parpadeo{0%,100%{opacity:1}50%{opacity:.4}}</style>'
 
     // ─── Empleado ─────────────────────────────────────────────────────
@@ -4323,11 +4562,12 @@ function per_guardar(){
 
 
 function loadConsultaPermisos(){
-  showLoader('Cargando permisos...');
+  var m=inc_mes, a=inc_anio;
+  showLoader('Cargando permisos de '+MESES_NOMBRES[m]+' '+a+'...');
   google.script.run
     .withSuccessHandler(function(lista){hideLoader();renderTablaPermisos(lista||[]);})
     .withFailureHandler(function(e){hideLoader();Swal.fire('Error',''+e,'error');})
-    .obtenerPermisosEmpleados({});
+    .obtenerPermisosEmpleados({mes:m, anio:a});
 }
 
 function renderTablaPermisos(lista){
@@ -4345,8 +4585,11 @@ function renderTablaPermisos(lista){
     +'<i class="fas fa-calendar-minus" style="color:#ea580c;font-size:1.4rem"></i></div>'
     +'<div><h5 class="fw-bold m-0">Permisos de Personal</h5>'
     +'<p class="text-muted small m-0">Solicitudes de permiso</p></div></div>'
+    +'<div class="d-flex align-items-center gap-2">'
+    +_incNavMes('PERMISOS')
     +'<button class="btn fw-bold rounded-pill px-4" style="background:#ea580c;color:white" onclick="loadPermisosEmp()">'
-    +'<i class="fas fa-plus me-2"></i>Nueva Solicitud</button></div>'
+    +'<i class="fas fa-plus me-2"></i>Nueva Solicitud</button>'
+    +'</div></div>'
     +'<div class="row g-3 mb-4">'
     +_incStat('Total Permisos',total,'#ea580c','fa-calendar-minus')
     +_incStat('Aprobados',aprobados,'#16a34a','fa-check-circle')
@@ -4393,10 +4636,9 @@ function _rowPer(r, idx){
     +'<td><span class="badge" style="'+badgeStyle+'">'+est.charAt(0)+est.slice(1).toLowerCase()+'</span></td>'
     +'<td><div class="d-flex gap-1 flex-wrap">'
     +'<button class="btn btn-sm btn-outline-primary rounded-pill" style="font-size:.7rem" data-accion="per-imprimir" data-idx="'+idx+'"><i class="fas fa-print me-1"></i>Imprimir</button>'
+    +(est==='PENDIENTE'?'<button class="btn btn-sm btn-outline-warning rounded-pill" style="font-size:.7rem" data-accion="per-editar" data-idx="'+idx+'"><i class="fas fa-edit me-1"></i>Editar</button>':'')
     +(est==='PENDIENTE'?'<button class="btn btn-sm btn-outline-success rounded-pill" style="font-size:.7rem" data-accion="per-aprobar" data-folio="'+r.folio+'" data-idx="'+idx+'" data-tipo="'+(r.tipoPermiso||'')+'"><i class="fas fa-check me-1"></i>Aprobar</button>':'')
-    +(est==='PENDIENTE'?'<button class="btn btn-sm btn-outline-danger rounded-pill" style="font-size:.7rem" data-accion="per-rechazar" data-folio="'+r.folio+'"><i class="fas fa-times me-1"></i>Rechazar</button>':'')
-    +(r.tipoPermiso==='PAGO_TIEMPO' && est!=='PAGADO'?'<button class="btn btn-sm rounded-pill fw-bold" style="font-size:.7rem;background:#ea580c;color:white" data-accion="per-pagar" data-folio="'+r.folio+'"><i class="fas fa-clock me-1"></i>Pagar</button>':'')
-    +(est!=='PENDIENTE'?'<button class="btn btn-sm btn-outline-secondary rounded-pill" style="font-size:.7rem" data-accion="per-eliminar" data-folio="'+r.folio+'"><i class="fas fa-trash me-1"></i>Eliminar</button>':'')
+    +(est==='PENDIENTE'?'<button class="btn btn-sm btn-outline-danger rounded-pill" style="font-size:.7rem" data-accion="per-eliminar" data-folio="'+r.folio+'"><i class="fas fa-trash me-1"></i>Eliminar</button>':'')
     +'</div></td></tr>';
 }
 function _permisosBindEvents(){
@@ -4412,19 +4654,86 @@ function _permisosBindEvents(){
     var idx=parseInt(btn.getAttribute('data-idx')||'0',10);
     var r=_rhGet('per',idx);
     if(ac==='per-imprimir')       per_imprimir(r, r.folio);
+    else if(ac==='per-editar')    _perModalEditar(r);
     else if(ac==='per-aprobar'){
       var tipo=btn.getAttribute('data-tipo')||'';
       if(tipo==='PAGO_TIEMPO') per_aprobarConPagoTiempo(folio, r||{});
       else per_cambiarEstatus(folio,'APROBADO');
     }
-    else if(ac==='per-rechazar')  per_cambiarEstatus(folio,'RECHAZADO');
-    else if(ac==='per-pagar')     per_modalPagoTiempo(folio);
     else if(ac==='per-eliminar')  incEliminar(folio,'PERMISOS_EMPLEADOS',loadConsultaPermisos);
   };
   area.addEventListener('click', area._perHandler);
 }
 
 
+function _perModalEditar(r){
+  if(!r) return;
+  var optsTPerm=TIPOS_PERMISO.map(function(t){
+    return '<option value="'+t.id+'"'+(r.tipoPermiso===t.id?' selected':'')+'>'+t.label+'</option>';
+  }).join('');
+  var fi='',ff='';
+  if(r.fechaInicio && r.fechaInicio.indexOf('/')>-1){var p=r.fechaInicio.split('/');fi=p[2]+'-'+p[1]+'-'+p[0];}
+  if(r.fechaFin    && r.fechaFin.indexOf('/')>-1){var p2=r.fechaFin.split('/');ff=p2[2]+'-'+p2[1]+'-'+p2[0];}
+  Swal.fire({
+    title:'Editar Permiso — '+r.folio,
+    width:'620px',
+    html:'<div class="text-start row g-2">'
+      +'<div class="col-12"><label class="form-label small fw-bold">Empleado</label>'
+      +'<input class="form-control form-control-sm" value="'+(r.empleado||'')+'" readonly style="background:#f8fafc"></div>'
+      +'<div class="col-md-6"><label class="form-label small fw-bold">Tipo de permiso</label>'
+      +'<select id="per-ed-tipo" class="form-select form-select-sm"><option value="">— Seleccionar —</option>'+optsTPerm+'</select></div>'
+      +'<div class="col-md-3"><label class="form-label small fw-bold">Hora salida</label>'
+      +'<input id="per-ed-hs" type="time" class="form-control form-control-sm" value="'+(r.horaSalida||'')+'"></div>'
+      +'<div class="col-md-3"><label class="form-label small fw-bold">Hora regreso</label>'
+      +'<input id="per-ed-hr" type="time" class="form-control form-control-sm" value="'+(r.horaRegreso||'')+'"></div>'
+      +'<div class="col-md-4"><label class="form-label small fw-bold">Fecha inicio</label>'
+      +'<input id="per-ed-fi" type="date" class="form-control form-control-sm" value="'+fi+'"></div>'
+      +'<div class="col-md-4"><label class="form-label small fw-bold">Fecha fin</label>'
+      +'<input id="per-ed-ff" type="date" class="form-control form-control-sm" value="'+ff+'"></div>'
+      +'<div class="col-md-4"><label class="form-label small fw-bold">Días</label>'
+      +'<input id="per-ed-dias" type="number" min="1" class="form-control form-control-sm" value="'+(r.diasSolicitados||1)+'"></div>'
+      +'<div class="col-12"><label class="form-label small fw-bold">Motivo</label>'
+      +'<input id="per-ed-motivo" class="form-control form-control-sm" value="'+(r.motivo||'')+'"></div>'
+      +'<div class="col-md-6"><label class="form-label small fw-bold">Autorizado por</label>'
+      +'<input id="per-ed-auth" class="form-control form-control-sm" value="'+(r.autorizadoPor||'')+'"></div>'
+      +'<div class="col-12"><label class="form-label small fw-bold">Observaciones</label>'
+      +'<input id="per-ed-obs" class="form-control form-control-sm" value="'+(r.observaciones||'')+'"></div>'
+      +'</div>',
+    showCancelButton:true,
+    confirmButtonText:'<i class="fas fa-save me-1"></i>Guardar',
+    cancelButtonText:'Cancelar',confirmButtonColor:'#ea580c',
+    preConfirm:function(){
+      var tipo2=document.getElementById('per-ed-tipo').value;
+      var fi2=document.getElementById('per-ed-fi').value;
+      var ff2=document.getElementById('per-ed-ff').value;
+      if(!tipo2||!fi2||!ff2){Swal.showValidationMessage('Tipo y fechas son obligatorios');return false;}
+      var fmtD=function(v){if(!v)return '';var p=v.split('-');return p.length===3?p[2]+'/'+p[1]+'/'+p[0]:v;};
+      return {
+        folio:          r.folio,
+        tipoPermiso:    tipo2,
+        horaSalida:     document.getElementById('per-ed-hs').value,
+        horaRegreso:    document.getElementById('per-ed-hr').value,
+        fechaInicio:    fmtD(fi2),
+        fechaFin:       fmtD(ff2),
+        diasSolicitados:document.getElementById('per-ed-dias').value,
+        motivo:         document.getElementById('per-ed-motivo').value,
+        autorizadoPor:  document.getElementById('per-ed-auth').value,
+        observaciones:  document.getElementById('per-ed-obs').value
+      };
+    }
+  }).then(function(res){
+    if(!res.isConfirmed) return;
+    toggleSaving(true,'Guardando...');
+    google.script.run
+      .withSuccessHandler(function(r){
+        toggleSaving(false);
+        if(r==='OK'){rhToast('success','✅ Registro actualizado');setTimeout(loadConsultaPermisos,1200);}
+        else Swal.fire('Error',r,'error');
+      })
+      .withFailureHandler(function(e){toggleSaving(false);Swal.fire('Error',''+e,'error');})
+      .editarRegistroIncidencia({hoja:'PERMISOS_EMPLEADOS', campos:res.value});
+  });
+}
 function _perFiltrar(){
   var emp=(document.getElementById('per-fi-emp').value||'').toUpperCase().trim();
   var est=(document.getElementById('per-fi-est').value||'').toUpperCase().trim();
@@ -5574,8 +5883,12 @@ function _tabRender(){
     +'<div style="font-size:1.25rem;font-weight:900;color:#0f172a;line-height:1.2">TABULADOR DE SALARIOS</div>'
     +'</div>'
     +'</div>'
+    +'<div style="display:flex;gap:8px">'
+    +'<button id="tab-btn-actualizar" style="background:#0369a1;color:white;border:none;border-radius:10px;padding:9px 18px;font-size:.85rem;font-weight:700;cursor:pointer;display:flex;align-items:center;gap:7px;box-shadow:0 2px 8px rgba(3,105,161,.3)">'
+    +'✏️ Actualizar Tabulador</button>'
     +'<button id="tab-btn-imprimir" style="background:#7B1034;color:white;border:none;border-radius:10px;padding:9px 18px;font-size:.85rem;font-weight:700;cursor:pointer;display:flex;align-items:center;gap:7px;box-shadow:0 2px 8px rgba(123,16,52,.3)">'
     +'🖨️ Imprimir</button>'
+    +'</div>'
     +'</div>'
     // ── Botones categoría ──
     +'<div id="tab-cat-bar" style="display:flex;flex-wrap:wrap;gap:4px;margin-bottom:24px">'+btns+'</div>'
@@ -5587,6 +5900,8 @@ function _tabRender(){
   if(!ca._tabBound){
     ca._tabBound = true;
     ca.addEventListener('click', function(e){
+      // Botón actualizar tabulador
+      if(e.target.closest('#tab-btn-actualizar')){ tab_abrirEditor(); return; }
       // Botón imprimir
       if(e.target.closest('#tab-btn-imprimir')){ tab_imprimir(); return; }
 
@@ -5657,8 +5972,8 @@ function _tabEscaleraHtml(escalones, catNombre){
     stepsHtml +=
       '<div style="display:flex;align-items:center;margin-left:'+mLeft+'px;margin-bottom:3px">'
       // Bloque escalón (color)
-      +'<div style="background:'+color+';height:'+STEP_H+'px;min-width:'+STEP_W+'px;'
-      +'border-radius:8px 8px 0 0;padding:0 14px;display:flex;align-items:center;gap:10px;'
+      +'<div style="background:'+color+';min-height:'+STEP_H+'px;min-width:'+STEP_W+'px;'
+      +'border-radius:8px 8px 0 0;padding:8px 14px;display:flex;align-items:center;gap:10px;'
       +'box-shadow:0 3px 8px rgba(0,0,0,.22);flex-shrink:0">'
       // Badge número
       +'<div style="flex-shrink:0;width:30px;height:30px;border-radius:50%;'
@@ -5667,8 +5982,8 @@ function _tabEscaleraHtml(escalones, catNombre){
       // Texto base
       +'<div style="min-width:0">'
       +'<div style="font-size:.76rem;font-weight:700;color:rgba(255,255,255,.88);'
-      +'white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:'+(STEP_W-80)+'px">'+baseNames+'</div>'
-      +'<div style="font-size:.92rem;font-weight:900;color:#fff;letter-spacing:.4px">'+salario+'</div>'
+      +'white-space:normal;word-break:break-word;line-height:1.25;max-width:'+(STEP_W-60)+'px">'+baseNames+'</div>'
+      +'<div style="font-size:.92rem;font-weight:900;color:#fff;letter-spacing:.4px;margin-top:2px">'+salario+'</div>'
       +'</div>'
       +'</div>'
       // Plus chips a la derecha
@@ -5701,6 +6016,100 @@ function _tabEscaleraHtml(escalones, catNombre){
     +'Escalón '+N+' — tope<i class="fas fa-arrow-right ms-1"></i>'
     +'</div>'
     +'</div>';
+}
+
+function tab_abrirEditor(){
+  showLoader('Cargando datos del tabulador...');
+  google.script.run
+    .withSuccessHandler(function(filas){
+      hideLoader();
+      if(!filas || !filas.length){
+        Swal.fire('Sin datos','No se encontraron filas en el Tabulador.','info');
+        return;
+      }
+      // Construir tabla editable
+      var filasPeso = '$'.charCodeAt(0); // solo para no repetir
+      var html = '<div style="max-height:420px;overflow-y:auto">'
+        +'<table class="table table-sm align-middle" style="font-size:.82rem">'
+        +'<thead style="position:sticky;top:0;z-index:1"><tr>'
+        +'<th style="background:#0f172a;color:white;padding:8px 10px;min-width:50px">#</th>'
+        +'<th style="background:#0f172a;color:white;padding:8px 10px;min-width:110px">DIARIO</th>'
+        +'<th style="background:#0f172a;color:white;padding:8px 10px;min-width:110px">DIA INT.</th>'
+        +'<th style="background:#0f172a;color:white;padding:8px 10px;min-width:110px">SEMANAL</th>'
+        +'</tr></thead><tbody id="tab-editor-tbody">';
+      filas.forEach(function(f, i){
+        html += '<tr>'
+          +'<td style="color:#94a3b8;font-weight:700;text-align:center">'+(i+1)+'</td>'
+          +'<td><div style="display:flex;align-items:center;gap:4px">'
+          +'<span style="color:#64748b;font-size:.8rem">$</span>'
+          +'<input type="number" step="0.01" min="0" class="form-control form-control-sm tab-ed-diario" '
+          +'data-row="'+f.rowNum+'" data-idx="'+i+'" '
+          +'style="font-size:.82rem;padding:4px 6px" value="'+f.diario.toFixed(2)+'">'
+          +'</div></td>'
+          +'<td><div style="display:flex;align-items:center;gap:4px">'
+          +'<span style="color:#64748b;font-size:.8rem">$</span>'
+          +'<input type="number" step="0.01" min="0" class="form-control form-control-sm tab-ed-diaint" '
+          +'data-row="'+f.rowNum+'" data-idx="'+i+'" '
+          +'style="font-size:.82rem;padding:4px 6px" value="'+f.diaInt.toFixed(2)+'">'
+          +'</div></td>'
+          +'<td><div style="display:flex;align-items:center;gap:4px">'
+          +'<span style="color:#64748b;font-size:.8rem">$</span>'
+          +'<input type="number" step="0.01" min="0" class="form-control form-control-sm tab-ed-semanal" '
+          +'data-row="'+f.rowNum+'" data-idx="'+i+'" '
+          +'style="font-size:.82rem;padding:4px 6px" value="'+f.semanal.toFixed(2)+'">'
+          +'</div></td>'
+          +'</tr>';
+      });
+      html += '</tbody></table></div>';
+
+      Swal.fire({
+        title:'Actualizar Tabulador',
+        html: html,
+        width: '560px',
+        showCancelButton: true,
+        confirmButtonText: '<i class="fas fa-save me-1"></i>Guardar cambios',
+        cancelButtonText: 'Cancelar',
+        confirmButtonColor: '#0369a1',
+        preConfirm: function(){
+          var filasEdit = [];
+          var rows  = document.querySelectorAll('#tab-editor-tbody tr');
+          rows.forEach(function(tr){
+            var inpD  = tr.querySelector('.tab-ed-diario');
+            var inpDI = tr.querySelector('.tab-ed-diaint');
+            var inpS  = tr.querySelector('.tab-ed-semanal');
+            if(!inpD) return;
+            filasEdit.push({
+              rowNum:  Number(inpD.getAttribute('data-row')),
+              diario:  parseFloat(inpD.value)  || 0,
+              diaInt:  parseFloat(inpDI.value) || 0,
+              semanal: parseFloat(inpS.value)  || 0
+            });
+          });
+          if(!filasEdit.length){
+            Swal.showValidationMessage('No hay datos para guardar');
+            return false;
+          }
+          return filasEdit;
+        }
+      }).then(function(res){
+        if(!res.isConfirmed) return;
+        showLoader('Guardando tabulador...');
+        google.script.run
+          .withSuccessHandler(function(r){
+            hideLoader();
+            if(String(r).startsWith('OK')){
+              rhToast('success','✅ Tabulador actualizado');
+              setTimeout(function(){ loadTabulador(); }, 1200);
+            } else {
+              Swal.fire('Error', r, 'error');
+            }
+          })
+          .withFailureHandler(function(e){ hideLoader(); Swal.fire('Error',''+e,'error'); })
+          .actualizarFilasTabulador(res.value);
+      });
+    })
+    .withFailureHandler(function(e){ hideLoader(); Swal.fire('Error',''+e,'error'); })
+    .obtenerFilasTabulador();
 }
 
 function tab_imprimir(){
@@ -6632,6 +7041,27 @@ function _esc(s){
 }
 
 function _perfilImprimir(){
+  // Si el tabulador no está cargado, cargarlo primero y luego imprimir
+  if(!_tab_datos || !_tab_datos.datos || !_tab_datos.datos.length){
+    showLoader('Preparando impresión...');
+    google.script.run
+      .withSuccessHandler(function(res){
+        hideLoader();
+        _tab_datos = res;
+        _perfilImprimirEjecutar();
+      })
+      .withFailureHandler(function(e){
+        hideLoader();
+        // Imprimir sin escalera si falla
+        _perfilImprimirEjecutar();
+      })
+      .obtenerTabulador();
+    return;
+  }
+  _perfilImprimirEjecutar();
+}
+
+function _perfilImprimirEjecutar(){
   var d    = _perfil_datos;
   var cats = ['SEG','CAL','PRO','MAT','LUB','OPE','HER','OPT','COD'];
   var fecha = new Date().toLocaleDateString('es-MX',{year:'numeric',month:'long',day:'numeric'});
@@ -6772,6 +7202,103 @@ function _perfilImprimir(){
       +'<span style="font-size:9px;color:#64748b;font-weight:700">SALARIO SEMANAL:</span>'
       +'<span style="font-size:13px;font-weight:900;color:#16a34a">'+d.salPuesto+'</span>'
       +'</div>':'')
+    +(function(){
+      // ── Escalera del tabulador para el PDF del perfil ──
+      if(!_tab_datos || !_tab_datos.datos || !_tab_datos.datos.length) return '';
+      // Buscar en qué categoría/escalón está el puesto
+      var escalones = null;
+      var escalonIdx = -1; // índice 0-based del escalón donde está el puesto
+      for(var ci2=0; ci2<_tab_datos.datos.length; ci2++){
+        var esc2 = _tab_datos.datos[ci2].escalones||[];
+        for(var ei2=0; ei2<esc2.length; ei2++){
+          var nombres2 = esc2[ei2].base.map(function(b){return b.nombre.toUpperCase();});
+          if(nombres2.indexOf(d.puesto.toUpperCase())!==-1){
+            escalones = esc2; escalonIdx = ei2; break;
+          }
+          // También revisar plus
+          if(esc2[ei2].plus){
+            var nombresP2 = esc2[ei2].plus.map(function(b){return b.nombre.toUpperCase();});
+            if(nombresP2.indexOf(d.puesto.toUpperCase())!==-1){
+              escalones = esc2; escalonIdx = ei2; break;
+            }
+          }
+        }
+        if(escalones) break;
+      }
+      if(!escalones || !escalones.length) return '';
+      var NE = escalones.length;
+      var SW2 = 120; var SH2 = 52;
+      var palette2 = ['#4A2C0A','#5C3A1E','#6B4423','#7A4F29','#8B5A2B','#9C6530','#A87040','#B47D50','#BE8B60','#C89870'];
+      var MONITO_W2 = 36;
+      // El monito va sobre el escalón del puesto (escalonIdx)
+      // En flex-column-reverse: el escalón 0 (i=0) tiene margin-left=0 (visual: abajo-izquierda)
+      // El escalón i tiene margin-left = i*SW2 desde la izquierda
+      var moniLeft2 = Math.round(escalonIdx * SW2 + SW2/2 - MONITO_W2/2);
+      var stepsHtml2 = '';
+      escalones.forEach(function(esc3, i3){
+        var color3    = palette2[Math.min(i3, palette2.length-1)];
+        var mLeft3    = i3 * SW2;
+        var baseN3    = esc3.base.map(function(b){return b.nombre;}).join(' / ');
+        var sal3      = esc3.base.length ? esc3.base[0].salario : '';
+        var esMio3    = (i3 === escalonIdx);
+        var plusH3    = '';
+        if(esc3.plus && esc3.plus.length){
+          plusH3 = '<div style="display:flex;align-items:center;flex-wrap:wrap;gap:3px;padding:0 5px">'
+            +'<span style="color:#7B1034;font-size:9px;font-weight:900">&#8594;</span>';
+          esc3.plus.forEach(function(p3){
+            var esPlusM = p3.nombre.toUpperCase()===d.puesto.toUpperCase();
+            plusH3 += '<div style="border:1.5px solid '+(esPlusM?'#dc2626':'#7B1034')+';border-radius:8px;'
+              +'padding:2px 7px;font-size:7px;white-space:nowrap;background:'+(esPlusM?'#fee2e2':'white')+';'
+              +'-webkit-print-color-adjust:exact;print-color-adjust:exact">'
+              +'<b style="color:'+(esPlusM?'#dc2626':'#0f172a')+'">'+p3.nombre+'</b>'
+              +' <span style="color:#7B1034;font-weight:900">'+p3.salario+'</span></div>';
+          });
+          plusH3 += '</div>';
+        }
+        stepsHtml2 +=
+          '<div style="display:flex;align-items:center;margin-left:'+mLeft3+'px;margin-bottom:2px">'
+          +'<div style="background:'+color3+';min-height:'+SH2+'px;min-width:'+SW2+'px;'
+          +'border-radius:6px 6px 0 0;padding:6px 10px;display:flex;align-items:center;gap:7px;flex-shrink:0;'
+          +(esMio3?'outline:3px solid #dc2626;outline-offset:1px;':'')
+          +'box-shadow:0 2px 6px rgba(0,0,0,.22);'
+          +'-webkit-print-color-adjust:exact;print-color-adjust:exact">'
+          +'<div style="flex-shrink:0;width:22px;height:22px;border-radius:50%;'
+          +'background:rgba(0,0,0,.28);display:flex;align-items:center;justify-content:center;'
+          +'font-size:8px;font-weight:900;color:#fff;-webkit-print-color-adjust:exact;print-color-adjust:exact">'+(i3+1)+'</div>'
+          +'<div style="min-width:0">'
+          +'<div style="font-size:7px;font-weight:700;color:rgba(255,255,255,.9);'
+          +'white-space:normal;word-break:break-word;line-height:1.2;max-width:'+(SW2-50)+'px">'+baseN3+'</div>'
+          +'<div style="font-size:9px;font-weight:900;color:#fff;margin-top:2px">'+sal3+'</div>'
+          +'</div>'
+          +'</div>'
+          +plusH3
+          +'</div>';
+      });
+      var totalW2 = NE * SW2 + 300;
+      var alturaEsc2 = NE * SH2 + 60;
+      var areaAncho2 = 680; // ancho útil del PDF portrait en px aprox
+      var escala2 = Math.min(1.5, Math.max(0.25, Math.round((areaAncho2/totalW2)*100)/100));
+      return '<div style="margin-bottom:10px;-webkit-print-color-adjust:exact;print-color-adjust:exact">'
+        +'<div style="font-size:7px;color:#64748b;font-weight:700;text-transform:uppercase;'
+        +'letter-spacing:.08em;margin-bottom:4px">Posición en escalera salarial</div>'
+        +'<div style="background:#fff8f0;border:1px solid #fed7aa;border-radius:8px;padding:6px 8px;overflow:hidden;'
+        +'-webkit-print-color-adjust:exact;print-color-adjust:exact">'
+        +'<div style="position:relative;padding-top:'+(MONITO_W2+12)+'px;min-width:'+totalW2+'px;'
+        +'transform-origin:top left;transform:scale('+escala2+');'
+        +'margin-bottom:'+(Math.round((NE*SH2+MONITO_W2+20)*escala2)-(NE*SH2+MONITO_W2+20)+16)+'px">'
+        +'<img src="https://media.licdn.com/dms/image/v2/D4E05AQFY6Jdpb5aQ2Q/videocover-high/B4EZlO0BzqIUB8-/0/1757963888527?e=2147483647&v=beta&t=NlqR1mtmHwJFGLGhUiW0vxCcvhwqw-pqQtHhOr5QqDQ"'
+        +' style="position:absolute;bottom:'+(SH2 * (escalonIdx + 1))+'px;left:'+moniLeft2+'px;width:'+MONITO_W2+'px;'
+        +'pointer-events:none;z-index:10" alt="escalando">'
+        +'<div style="display:flex;flex-direction:column-reverse;align-items:flex-start">'
+        +stepsHtml2
+        +'</div>'
+        +'</div>'
+        +'<div style="font-size:6px;color:#94a3b8;text-align:center;margin-top:2px">'
+        +'Escalón '+(escalonIdx+1)+' de '+NE+' — '+d.puesto
+        +'</div>'
+        +'</div>'
+        +'</div>';
+    })()
     +(d.objetivoPuesto?'<div style="margin-bottom:12px;padding:8px 12px;background:#fff7ed;'
       +'border:1px solid #fed7aa;border-radius:8px;'
       +'-webkit-print-color-adjust:exact;print-color-adjust:exact">'

@@ -1588,13 +1588,25 @@ function obtenerAusentismo(filtros) {
   var data    = sheet.getDataRange().getValues();
   var headers = data[0].map(function(h){ return String(h).toUpperCase().trim(); });
   var f = filtros || {};
+  var filtrarMes  = (f.mes  !== undefined && f.mes  !== null);
+  var filtrarAnio = (f.anio !== undefined && f.anio !== null);
   var lista = [];
   for (var i = 1; i < data.length; i++) {
     var _g = function(col) { var idx = _colIdx(headers, col); return idx > -1 ? data[i][idx] : ""; };
-    var emp  = String(_g("EMPLEADO")    || "").toUpperCase();
-    var just = String(_g("JUSTIFICADO") || "").toUpperCase();
-    if (f.empleado   && !emp.includes(f.empleado.toUpperCase())) continue;
-    if (f.justificado && f.justificado !== "TODOS" && just !== f.justificado.toUpperCase()) continue;
+    if (filtrarMes || filtrarAnio) {
+      var rawFecha = _g("FECHA");
+      var fechaStr = rawFecha instanceof Date
+        ? _fmtFechaActa(rawFecha)
+        : String(rawFecha || "");
+      var partes = fechaStr.split("/");
+      // Formato esperado: dd/MM/yyyy
+      if (partes.length === 3) {
+        if (filtrarAnio && Number(partes[2]) !== Number(f.anio)) continue;
+        if (filtrarMes  && (Number(partes[1]) - 1) !== Number(f.mes)) continue;
+      }
+    }
+    if (f.empleado && !String(_g("EMPLEADO")||"").toUpperCase().includes(f.empleado.toUpperCase())) continue;
+    if (f.justificado && f.justificado !== "TODOS" && String(_g("JUSTIFICADO")||"").toUpperCase() !== f.justificado.toUpperCase()) continue;
     lista.push({
       folio:        String(_g("FOLIO")            || ""),
       fecha:        _fmtFechaActa(_g("FECHA")),
@@ -1604,7 +1616,7 @@ function obtenerAusentismo(filtros) {
       puesto:       String(_g("PUESTO")            || ""),
       turno:        String(_g("TURNO")             || ""),
       motivo:       String(_g("MOTIVO")            || ""),
-      justificado:  String(_g("JUSTIFICADO")       || ""),
+      justificado:  String(_g("JUSTIFICADO")       || "NO"),
       documento:    String(_g("DOCUMENTO_SOPORTE") || ""),
       observaciones:String(_g("OBSERVACIONES")     || "")
     });
@@ -1676,26 +1688,37 @@ function obtenerRetardos(filtros) {
   var data    = sheet.getDataRange().getValues();
   var headers = data[0].map(function(h){ return String(h).toUpperCase().trim(); });
   var f = filtros || {};
+  var filtrarMes  = (f.mes  !== undefined && f.mes  !== null);
+  var filtrarAnio = (f.anio !== undefined && f.anio !== null);
   var lista = [];
   for (var i = 1; i < data.length; i++) {
     var _g = function(col) { var idx = _colIdx(headers, col); return idx > -1 ? data[i][idx] : ""; };
-    var emp  = String(_g("EMPLEADO")    || "").toUpperCase();
-    var just = String(_g("JUSTIFICADO") || "").toUpperCase();
-    if (f.empleado    && !emp.includes(f.empleado.toUpperCase())) continue;
-    if (f.justificado && f.justificado !== "TODOS" && just !== f.justificado.toUpperCase()) continue;
+    if (filtrarMes || filtrarAnio) {
+      var rawFecha2 = _g("FECHA");
+      var fechaStr2 = rawFecha2 instanceof Date
+        ? _fmtFechaActa(rawFecha2)
+        : String(rawFecha2 || "");
+      var partes2 = fechaStr2.split("/");
+      if (partes2.length === 3) {
+        if (filtrarAnio && Number(partes2[2]) !== Number(f.anio)) continue;
+        if (filtrarMes  && (Number(partes2[1]) - 1) !== Number(f.mes)) continue;
+      }
+    }
+    if (f.empleado && !String(_g("EMPLEADO")||"").toUpperCase().includes(f.empleado.toUpperCase())) continue;
+    if (f.justificado && f.justificado !== "TODOS" && String(_g("JUSTIFICADO")||"").toUpperCase() !== f.justificado.toUpperCase()) continue;
     lista.push({
-      folio:         String(_g("FOLIO")           || ""),
-      fecha:         _fmtFechaActa(_g("FECHA")),
-      empleado:      String(_g("EMPLEADO")        || ""),
-      numEmpleado:   String(_g("NUM_EMPLEADO")    || ""),
-      departamento:  String(_g("DEPARTAMENTO")    || ""),
-      puesto:        String(_g("PUESTO")          || ""),
-      turno:         String(_g("TURNO")           || ""),
-      horaReal:      String(_g("HORA_REAL")       || ""),
-      horaProgramada:String(_g("HORA_PROGRAMADA") || ""),
-      minutosRetardo:String(_g("MINUTOS_RETARDO") || "0"),
-      justificado:   String(_g("JUSTIFICADO")     || ""),
-      observaciones: String(_g("OBSERVACIONES")   || "")
+      folio:          String(_g("FOLIO")           || ""),
+      fecha:          _fmtFechaActa(_g("FECHA")),
+      empleado:       String(_g("EMPLEADO")        || ""),
+      numEmpleado:    String(_g("NUM_EMPLEADO")     || ""),
+      departamento:   String(_g("DEPARTAMENTO")    || ""),
+      puesto:         String(_g("PUESTO")          || ""),
+      turno:          String(_g("TURNO")           || ""),
+      horaReal:       _fmtHora(_g("HORA_REAL")),
+      horaProgramada: _fmtHora(_g("HORA_PROGRAMADA")),
+      minutosRetardo: String(_g("MINUTOS_RETARDO") || "0"),
+      justificado:    String(_g("JUSTIFICADO")     || "NO"),
+      observaciones:  String(_g("OBSERVACIONES")   || "")
     });
   }
   lista.reverse();
@@ -1757,11 +1780,24 @@ function obtenerPermisosEmpleados(filtros) {
   var data    = sheet.getDataRange().getValues();
   var headers = data[0].map(function(h){ return String(h).toUpperCase().trim(); });
   var f = filtros || {};
+  var filtrarMes  = (f.mes  !== undefined && f.mes  !== null);
+  var filtrarAnio = (f.anio !== undefined && f.anio !== null);
   var lista = [];
   for (var i = 1; i < data.length; i++) {
     var _g = function(col) { var idx = _colIdx(headers, col); return idx > -1 ? data[i][idx] : ""; };
     var emp  = String(_g("EMPLEADO") || "").toUpperCase();
     var est  = String(_g("ESTATUS")  || "").toUpperCase();
+    if (filtrarMes || filtrarAnio) {
+      var rawSol = _g("FECHA_SOLICITUD");
+      var fSol = rawSol instanceof Date
+        ? _fmtFechaActa(rawSol)
+        : String(rawSol || "");
+      var pSol = fSol.split("/");
+      if (pSol.length === 3) {
+        if (filtrarAnio && Number(pSol[2]) !== Number(f.anio)) continue;
+        if (filtrarMes  && (Number(pSol[1]) - 1) !== Number(f.mes)) continue;
+      }
+    }
     if (f.empleado && !emp.includes(f.empleado.toUpperCase())) continue;
     if (f.estatus  && f.estatus !== "TODOS" && est !== f.estatus.toUpperCase()) continue;
     lista.push({
@@ -1805,6 +1841,45 @@ function actualizarEstatusPermiso(folio, nuevoEstatus) {
     }
   }
   return "No encontrado";
+}
+
+// Editar cualquier registro de incidencia (Ausentismo, Retardos, Permisos) por folio
+function editarRegistroIncidencia(payload) {
+  // payload: { hoja: "AUSENTISMO"|"RETARDOS"|"PERMISOS_EMPLEADOS", campos: { folio, ...camposAEditar } }
+  var ssRH  = SpreadsheetApp.openById(ID_HOJA_RH);
+  var sheet = ssRH.getSheetByName(payload.hoja);
+  if (!sheet) return "Error: Hoja " + payload.hoja + " no encontrada";
+  var data    = sheet.getDataRange().getValues();
+  var headers = data[0].map(function(h){ return String(h).toUpperCase().trim(); });
+  var folio   = String(payload.campos.folio || "").trim();
+  var iFolio  = _colIdx(headers, "FOLIO"); if (iFolio < 0) iFolio = 1;
+  for (var i = 1; i < data.length; i++) {
+    if (String(data[i][iFolio] || "").trim() !== folio) continue;
+    // Actualizar sólo los campos que vienen en payload.campos (excepto folio y empleado)
+    var c = payload.campos;
+    var set = function(col, val) {
+      var idx = _colIdx(headers, col);
+      if (idx > -1 && val !== undefined && val !== null) sheet.getRange(i + 1, idx + 1).setValue(val);
+    };
+    if (c.fecha)          set("FECHA",            c.fecha);
+    if (c.turno)          set("TURNO",            c.turno);
+    if (c.motivo)         set("MOTIVO",           c.motivo);
+    if (c.justificado)    set("JUSTIFICADO",      c.justificado);
+    if (c.documento !== undefined) set("DOCUMENTO_SOPORTE", c.documento);
+    if (c.horaProgramada) set("HORA_PROGRAMADA",  c.horaProgramada);
+    if (c.horaReal)       set("HORA_REAL",        c.horaReal);
+    if (c.minutosRetardo !== undefined) set("MINUTOS_RETARDO", Number(c.minutosRetardo)||0);
+    if (c.tipoPermiso)    set("TIPO_PERMISO",     c.tipoPermiso);
+    if (c.horaSalida !== undefined)  set("HORA_SALIDA",  c.horaSalida);
+    if (c.horaRegreso !== undefined) set("HORA_REGRESO", c.horaRegreso);
+    if (c.fechaInicio)    set("FECHA_INICIO",     c.fechaInicio);
+    if (c.fechaFin)       set("FECHA_FIN",        c.fechaFin);
+    if (c.diasSolicitados !== undefined) set("DIAS_SOLICITADOS", Number(c.diasSolicitados)||1);
+    if (c.autorizadoPor !== undefined)   set("AUTORIZADO_POR",   c.autorizadoPor);
+    if (c.observaciones !== undefined)   set("OBSERVACIONES",    c.observaciones);
+    return "OK";
+  }
+  return "No encontrado: " + folio;
 }
 
 // Aprobar permiso tipo PAGO_TIEMPO guardando también fecha/horas de pago
@@ -2423,6 +2498,61 @@ function obtenerTabulador() {
   }
 
   return { categorias: categorias, datos: datos };
+}
+
+// ── Leer filas editables del Tabulador (Col A ID, B DIARIO, C DIA_INT, D SEMANAL) ──
+function obtenerFilasTabulador() {
+  var ss    = SpreadsheetApp.openById(ID_HOJA_RH);
+  var sheet = ss.getSheetByName('TABULADOR');
+  if (!sheet || sheet.getLastRow() < 2) return [];
+  var data    = sheet.getDataRange().getValues();
+  var headers = data[0].map(function(h){ return String(h).toUpperCase().trim(); });
+  var iID  = headers.indexOf('ID');      if(iID  < 0) iID  = 0;
+  var iD   = headers.indexOf('DIARIO');  if(iD   < 0) iD   = 1;
+  var iDI  = headers.indexOf('DIA_INT'); if(iDI  < 0) iDI  = 2;
+  var iS   = headers.indexOf('SEMANAL'); if(iS   < 0) iS   = 3;
+  function _limpiar(v){
+    if(typeof v === 'number') return v;
+    return parseFloat(String(v).replace(/[$,\s]/g,'')) || 0;
+  }
+  function _fmt(v){
+    var n = _limpiar(v);
+    return n > 0 ? '$'+n.toFixed(2).replace(/\B(?=(\d{3})+(?!\d))/g,',') : '';
+  }
+  var filas = [];
+  for(var r = 1; r < data.length; r++){
+    var id = String(data[r][iID] || '').trim();
+    var diario  = _limpiar(data[r][iD]);
+    var diaInt  = _limpiar(data[r][iDI]);
+    var semanal = _limpiar(data[r][iS]);
+    if(!diario && !semanal) continue; // fila vacía
+    filas.push({ rowNum: r+1, id: id, diario: diario, diaInt: diaInt, semanal: semanal,
+      diarioFmt: _fmt(data[r][iD]), diaIntFmt: _fmt(data[r][iDI]), semanalFmt: _fmt(data[r][iS]) });
+  }
+  return filas;
+}
+
+// ── Guardar filas editadas del Tabulador ──
+function actualizarFilasTabulador(filas) {
+  var ss    = SpreadsheetApp.openById(ID_HOJA_RH);
+  var sheet = ss.getSheetByName('TABULADOR');
+  if (!sheet) return 'Error: hoja TABULADOR no encontrada';
+  var data    = sheet.getDataRange().getValues();
+  var headers = data[0].map(function(h){ return String(h).toUpperCase().trim(); });
+  var iD  = headers.indexOf('DIARIO');  if(iD  < 0) iD  = 1;
+  var iDI = headers.indexOf('DIA_INT'); if(iDI < 0) iDI = 2;
+  var iS  = headers.indexOf('SEMANAL'); if(iS  < 0) iS  = 3;
+  var actualizados = 0;
+  filas.forEach(function(f){
+    var rowNum = Number(f.rowNum);
+    if(rowNum < 2 || rowNum > sheet.getLastRow()) return;
+    sheet.getRange(rowNum, iD  + 1).setValue(Number(f.diario)  || 0);
+    sheet.getRange(rowNum, iDI + 1).setValue(Number(f.diaInt)  || 0);
+    sheet.getRange(rowNum, iS  + 1).setValue(Number(f.semanal) || 0);
+    actualizados++;
+  });
+  SpreadsheetApp.flush();
+  return 'OK:'+actualizados;
 }
 
 // ══════════════════════════════════════════════════════════════════════
