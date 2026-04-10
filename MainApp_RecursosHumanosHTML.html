@@ -667,7 +667,16 @@ window.onload = function() {
       usersDB = u || [];
       var s = null;
       try { s = localStorage.getItem('toolcn_rh_session'); } catch(e){}
-      if(s) { try { initApp(JSON.parse(s)); } catch(e) { try{localStorage.removeItem('toolcn_rh_session');}catch(e2){} } }
+      if(s) {
+        try {
+          var sesion = JSON.parse(s);
+          initApp(sesion);
+          var params = new URLSearchParams(window.location.search);
+          if(params.get('modulo') === 'AUTORIZAR') {
+            setTimeout(function(){ loadModule('AUTORIZAR'); }, 800);
+          }
+        } catch(e) { try{localStorage.removeItem('toolcn_rh_session');}catch(e2){} }
+      }
     })
     .withFailureHandler(function() { hideLoader(); })
     .getUsuariosLogin();
@@ -2132,11 +2141,8 @@ function vac_imprimirFormato(folio, d){
       var op         = vac_activo;
       var totalAcum  = 0;
       // Solo mostrar registros con CONSIDERAR = SI (periodo actual)
-      var histFiltrado = (hist||[]).filter(function(x){
-        return String(x.considerar||'').toUpperCase().trim() === 'SI';
-      });
-      // Ordenar del más reciente al más antiguo y limitar a 10 registros visibles
-      var histOrdenado = histFiltrado.slice().reverse();
+      // obtenerHistorialPeriodo ya filtra por APLICADO+CONSIDERAR=SI, no filtrar de nuevo
+      var histOrdenado = (hist||[]).slice().reverse();
       var MAX_HIST = 10;
       var histVisible = histOrdenado.slice(0, MAX_HIST);
       var htmlHist = histVisible.map(function(x){
@@ -2146,13 +2152,16 @@ function vac_imprimirFormato(folio, d){
       // Acumular total real con todos los registros del periodo
       (histOrdenado.slice(MAX_HIST)).forEach(function(x){ totalAcum += Number(x.dias); });
 
-      var pHist           = Number(op.dispAnt       || 0);
-      var sHist           = Number(op.proporcionales || 0);
-      var tPrevios        = Number(op.diasTomados    || 0);
+      var pHist           = Number(op.saldoInicial || 0) || Number(op.dispAnt || 0); // Col P OPERADORES: fijo
+      var sHist           = Number(op.proporcionales || 0);              // Col S OPERADORES
+      var tPrevios        = Number(op.diasTomados    || 0);              // Col T OPERADORES
       var diasSolicitados = Number(d.dias            || 0);
       var disfrutanConEsta = tPrevios + diasSolicitados;
-      var penAnt          = Math.max(0, pHist - disfrutanConEsta);
-      var totalRestante   = (pHist + sHist) - disfrutanConEsta;
+      var penAnt          = pHist - disfrutanConEsta;
+      var penAntDisplay   = Math.max(0, penAnt);
+      var propConsumidos  = penAnt < 0 ? Math.abs(penAnt) : 0;
+      var propRestantes   = Math.max(0, sHist - propConsumidos);
+      var totalRestante   = penAntDisplay + propRestantes;
 
       var vacPrintArea = document.getElementById('vac-print-area');
       if(!vacPrintArea){
@@ -2205,18 +2214,34 @@ function vac_imprimirFormato(folio, d){
         // Columna izquierda
         +'<div style="width:58%;padding:14px;border-right:1.8px solid #000;display:flex;flex-direction:column;gap:8px">'
         +'<div style="font-size:13px;margin-bottom:6px"><b>COMENTARIOS:</b> <span style="border-bottom:1.8px solid #000;padding:0 10px">'+(d.observaciones||d.obs||'N/A')+'</span></div>'
-        +'<div style="font-size:13px">DÍAS PENDIENTES PERÍODO ANT (P): <b>'+pHist+'</b></div>'
-        +'<div style="font-size:13px">DÍAS PROPORCIONALES (S): <b>'+sHist+'</b></div>'
+        +'<div style="font-size:13px">DÍAS ARRANQUE PERIODO ANTERIOR (P): <b>'+pHist+'</b></div>'
+        +'<div style="font-size:13px">DÍAS PROPORCIONALES PRÓXIMO PERIODO (S): <b>'+sHist+'</b></div>'
         +'<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:8px">'
         +'<div style="font-size:13px;line-height:2">'
         +'FECHA DE INICIO:<br><b>'+_consFmtFecha(d.inicio)+'</b><br><br>'
         +'FECHA DE REGRESO:<br><b>'+_consFmtFecha(d.fin)+'</b><br><br>'
         +'DÍAS SOLICITADOS: <b style="color:red;font-size:22px;font-weight:900">'+diasSolicitados+'</b><br>'
-        +'RESTANTES PERÍODO ANT: <b>'+penAnt+'</b>'
+        +'<span style="white-space:nowrap">DÍAS RESTANTES PERIODO ANTERIOR: <b>'+penAntDisplay+'</b></span>'
+        +(penAnt < 0
+          ? ' &nbsp;<i style="font-size:11px;color:#1d4ed8;font-weight:700">— Se han tomado '+propConsumidos+' de '+sHist+' días proporcionales. Restan '+propRestantes+' días.</i>'
+          : '')
         +'</div>'
         +'<div style="text-align:center">'
         +'<div style="border:1.5px solid #000;padding:6px;margin-bottom:8px"><div style="font-size:9px;font-weight:900">DISFRUTADOS PREVIOS</div><div style="font-size:20px;font-weight:900">'+tPrevios+'</div></div>'
-        +'<div style="border:3px solid #000;padding:8px;background:#f0f0f0"><div style="font-size:9px;font-weight:900">DÍAS RESTANTES TOTALES</div><div style="font-size:28px;font-weight:900;color:red">'+totalRestante+'</div></div>'
+        +'<div style="border:3px solid #000;padding:10px 8px;background:#f0f0f0;text-align:center">'
+        +'<div style="font-size:9px;font-weight:900;margin-bottom:8px;text-transform:uppercase">DÍAS RESTANTES TOTALES</div>'
+        +'<div style="display:inline-grid;grid-template-columns:auto auto auto auto auto;align-items:baseline;column-gap:6px;margin-bottom:0">'
+        +'<span style="font-size:15px;font-weight:700;text-align:center">'+penAntDisplay+'</span>'
+        +'<span style="font-size:12px;color:#555;text-align:center">+</span>'
+        +'<span style="font-size:15px;font-weight:700;text-align:center">'+propRestantes+'</span>'
+        +'<span style="font-size:12px;color:#555;text-align:center">=</span>'
+        +'<span style="font-size:30px;font-weight:900;color:'+(totalRestante<0?'#dc2626':'#111')+';text-align:center">'+totalRestante+'</span>'
+        +'<span style="font-size:9px;color:#777;text-align:center">(Ant.)</span>'
+        +'<span style="font-size:9px;color:transparent;text-align:center">+</span>'
+        +'<span style="font-size:9px;color:#777;text-align:center">(Prop.)</span>'
+        +'<span></span><span></span>'
+        +'</div>'
+        +'</div>'
         +'</div></div></div>'
 
         // Columna derecha — historial
@@ -2491,14 +2516,14 @@ function cons_render(){
     var soles = op.solicitudesRecientes || [];
 
     // Lógica de balances
-    var pTotal      = Number(op.dispAnt || 0);
-    var sTotal      = Number(op.proporcionales || 0);
-    var tomados     = Number(op.diasTomados || 0);
+    var pTotal      = Number(op.saldoInicial || op.dispAnt || 0); // Col P: fijo
+    var sTotal      = Number(op.proporcionales || 0);              // Col S
+    var tomados     = Number(op.diasTomados || 0);                 // Col T: total tomados
     var pTomados    = Math.min(tomados, pTotal);
-    var pPendientes = pTotal - pTomados;
-    var remS        = Math.max(0, tomados - pTotal);
-    var sTomados    = Math.min(remS, sTotal);
-    var sPendientes = sTotal - sTomados;
+    var pPendientes = Math.max(0, pTotal - tomados);
+    var propConsumidos = Math.max(0, tomados - pTotal);
+    var sTomados    = Math.min(propConsumidos, sTotal);
+    var sPendientes = Math.max(0, sTotal - sTomados);
     var granTotal   = (pTotal + sTotal) - tomados;
 
     html += '<div class="card-pro mb-3" style="border:1.5px solid #e0e7ff;border-radius:16px;overflow:hidden">';
@@ -2534,9 +2559,8 @@ function cons_render(){
     // Tabla de solicitudes recientes
     if(soles.length){
       // Total días tomados en el periodo (APLICADO + CONSIDERAR=SI)
-      var diasPeriodo = soles.reduce(function(acc, s){
-        return acc + (s.estado==='APLICADO' && String(s.considerar).toUpperCase()==='SI' ? Number(s.dias||0) : 0);
-      }, 0);
+      // Usar diasTomados de Col T (total real, no solo las solicitudes visibles)
+      var diasPeriodo = tomados;
       html += '<div style="padding:14px 18px">';
       html += '<div style="display:flex;align-items:center;gap:16px;margin-bottom:8px;flex-wrap:wrap">';
       html += '<div style="font-size:.7rem;font-weight:700;color:#64748b;text-transform:uppercase;letter-spacing:.06em">Últimas Solicitudes</div>';
@@ -2712,13 +2736,16 @@ function cons_imprimir(idSol, idOp){
         return '<tr><td>'+x.inicio+'</td><td>'+x.fin+'</td><td>'+x.dias+'</td></tr>';
       }).join('');
 
-      var pHist          = Number(sol.histP || 0);
-      var sHist          = Number(sol.histS || 0);
-      var tPrevios       = Number(sol.histT || 0);
-      var diasSolicitados= Number(sol.dias  || 0);
+      var pHist           = Number(op.saldoInicial || op.dispAnt || 0); // Col P OPERADORES: siempre en tiempo real
+      var sHist           = Number(op.proporcionales || 0);              // Col S OPERADORES: en tiempo real
+      var tPrevios        = Number(op.diasTomados    || 0);              // Col T OPERADORES: en tiempo real
+      var diasSolicitados = Number(sol.dias          || 0);
       var disfrutanConEsta = tPrevios + diasSolicitados;
-      var penAnt         = Math.max(0, pHist - disfrutanConEsta);
-      var totalRestante  = (pHist + sHist) - disfrutanConEsta;
+      var penAnt          = pHist - disfrutanConEsta;
+      var penAntDisplay   = Math.max(0, penAnt);
+      var propConsumidos  = penAnt < 0 ? Math.abs(penAnt) : 0;
+      var propRestantes   = Math.max(0, sHist - propConsumidos);
+      var totalRestante   = penAntDisplay + propRestantes;
 
       var printArea = document.getElementById('cons-print-area');
       if(!printArea){
@@ -2755,18 +2782,31 @@ function cons_imprimir(idSol, idOp){
           <div style="display:flex;border:1.8px solid #000;flex:1;min-height:0">
             <div style="width:58%;padding:14px;border-right:1.8px solid #000;display:flex;flex-direction:column;gap:8px">
               <div style="font-size:13px;margin-bottom:6px"><b>COMENTARIOS:</b> <span style="border-bottom:1.8px solid #000;padding:0 10px;font-size:13px">${sol.obs && sol.obs.trim() ? sol.obs : 'Sin observaciones'}</span></div>
-              <div style="font-size:13px">DÍAS PENDIENTES PERÍODO ANT (P): <b>${pHist}</b></div>
-              <div style="font-size:13px">DÍAS PROPORCIONALES (S): <b>${sHist}</b></div>
+              <div style="font-size:13px">DÍAS ARRANQUE PERIODO ANTERIOR (P): <b>${pHist}</b></div>
+              <div style="font-size:13px">DÍAS PROPORCIONALES PRÓXIMO PERIODO (S): <b>${sHist}</b></div>
               <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:8px">
                 <div style="font-size:13px;line-height:2">
                   FECHA DE INICIO:<br><b>${_consFmtFecha(sol.inicio)}</b><br><br>
                   FECHA DE REGRESO:<br><b>${_consFmtFecha(sol.fin)}</b><br><br>
                   DÍAS SOLICITADOS: <b style="color:red;font-size:22px">${diasSolicitados}</b><br>
-                  RESTANTES PERÍODO ANT: <b>${penAnt}</b>
+                  <span style="white-space:nowrap">DÍAS RESTANTES PERIODO ANTERIOR: <b>${penAntDisplay}</b>${penAnt < 0 ? ` &nbsp;<i style="font-size:11px;color:#1d4ed8;font-weight:700">— Se han tomado ${propConsumidos} de ${sHist} días proporcionales. Restan ${propRestantes} días.</i>` : ''}</span>
                 </div>
                 <div style="text-align:center">
                   <div style="border:1.5px solid #000;padding:6px;margin-bottom:8px"><small style="font-size:9px;font-weight:900">DISFRUTADOS PREVIOS</small><div style="font-size:20px;font-weight:900">${tPrevios}</div></div>
-                  <div style="border:3px solid #000;padding:8px;background:#f0f0f0"><small style="font-size:9px;font-weight:900">DÍAS RESTANTES TOTALES</small><div style="font-size:28px;font-weight:900;color:red">${totalRestante}</div></div>
+                  <div style="border:3px solid #000;padding:10px 8px;background:#f0f0f0;text-align:center">
+                    <div style="font-size:9px;font-weight:900;margin-bottom:8px;text-transform:uppercase">DÍAS RESTANTES TOTALES</div>
+                    <div style="display:inline-grid;grid-template-columns:auto auto auto auto auto;align-items:baseline;column-gap:6px;margin-bottom:0">
+                      <span style="font-size:15px;font-weight:700;text-align:center">${penAntDisplay}</span>
+                      <span style="font-size:12px;color:#555;text-align:center">+</span>
+                      <span style="font-size:15px;font-weight:700;text-align:center">${propRestantes}</span>
+                      <span style="font-size:12px;color:#555;text-align:center">=</span>
+                      <span style="font-size:30px;font-weight:900;color:${totalRestante<0?'#dc2626':'#111'};text-align:center">${totalRestante}</span>
+                      <span style="font-size:9px;color:#777;text-align:center">(Ant.)</span>
+                      <span style="font-size:9px;color:transparent;text-align:center">+</span>
+                      <span style="font-size:9px;color:#777;text-align:center">(Prop.)</span>
+                      <span></span><span></span>
+                    </div>
+                  </div>
                 </div>
               </div>
             </div>

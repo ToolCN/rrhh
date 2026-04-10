@@ -530,6 +530,7 @@ function obtenerDatosVacaciones() {
       clave:           String(data[i][6]),
       ingreso:         data[i][8] instanceof Date ? Utilities.formatDate(data[i][8], "GMT-6", "dd/MM/yyyy") : String(data[i][8]),
       totalDisponible: Math.floor(Number(data[i][14]) || 0),
+      saldoInicial:    Number(data[i][15]) || 0,
       dispAnt:         Math.floor(Number(data[i][20]) || 0),
       proporcionales:  Math.floor(Number(data[i][18]) || 0),
       diasTomados:     Math.floor(Number(data[i][19]) || 0),
@@ -668,10 +669,16 @@ function actualizarSaldosYAniversarios() {
     var diasSiguienteAnio = dicVac[aniosCumplidos + 1] || dicVac[maxAnioEnTabla];
     var propCalculado     = Math.floor(diasSiguienteAnio * fraccionAnio);
 
-    dataOp[i][18] = propCalculado;          // Col S: PROPORCIONALES
-    dataOp[i][19] = sumaDiasSi;             // Col T: DIAS_TOMADOS del periodo actual
-    dataOp[i][21] = propCalculado;          // Col V: saldo actual (espejo de proporcionales)
-    dataOp[i][14] = Number(dataOp[i][20]) + propCalculado; // Col O: TOTAL_DISPONIBLE
+    var saldoInicial = Number(dataOp[i][15]) || 0;          // Col P: arranque fijo del periodo
+    var restanteAnt  = Math.max(0, saldoInicial - sumaDiasSi); // Col U = Col P - Col T, mínimo 0
+    // Si Col T superó Col P, los días extra ya están comiendo de proporcionales
+    var propConsumidos = Math.max(0, sumaDiasSi - saldoInicial);
+    var propRestantes  = Math.max(0, propCalculado - propConsumidos);
+    dataOp[i][18] = propCalculado;          // Col S: proporcionales totales del periodo (no baja)
+    dataOp[i][19] = sumaDiasSi;             // Col T: días tomados acumulados
+    dataOp[i][20] = restanteAnt;            // Col U: restante del periodo anterior (mínimo 0)
+    dataOp[i][21] = propRestantes;          // Col V: proporcionales restantes después de consumo
+    dataOp[i][14] = restanteAnt + propRestantes; // Col O: total disponible real
   }
 
   shOp.getRange(1, 1, dataOp.length,  dataOp[0].length).setValues(dataOp);
@@ -750,9 +757,9 @@ function guardarSolicitudVacaciones(datos) {
 
   for (var i = 1; i < dataOp.length; i++) {
     if (String(dataOp[i][0]) === String(datos.idOperador)) {
-      histP = dataOp[i][20]; // Col U
-      histS = dataOp[i][18]; // Col S
-      histT = dataOp[i][19]; // Col T
+      histP = dataOp[i][20]; // Col U OPERADORES → Col O SOLICITUDES: DISP_PER_ANT
+      histS = dataOp[i][18]; // Col S OPERADORES → Col P SOLICITUDES: DISP_PER_ACT (proporcionales)
+      histT = dataOp[i][19]; // Col T OPERADORES → Col Q SOLICITUDES: DIAS_TOMADOS
       break;
     }
   }
@@ -779,9 +786,10 @@ function obtenerHistorialPeriodo(idOperador) {
     var considerar = String(data[i][12] || '').toUpperCase().trim();
     if (String(data[i][1]) === String(idOperador) && data[i][6] === "APLICADO" && considerar === "SI") {
       historial.push({
-        inicio: data[i][3] instanceof Date ? Utilities.formatDate(data[i][3], "GMT", "dd/MM/yyyy") : String(data[i][3]),
-        fin:    data[i][4] instanceof Date ? Utilities.formatDate(data[i][4], "GMT", "dd/MM/yyyy") : String(data[i][4]),
-        dias:   data[i][5]
+        inicio:     data[i][3] instanceof Date ? Utilities.formatDate(data[i][3], "GMT", "dd/MM/yyyy") : String(data[i][3]),
+        fin:        data[i][4] instanceof Date ? Utilities.formatDate(data[i][4], "GMT", "dd/MM/yyyy") : String(data[i][4]),
+        dias:       data[i][5],
+        considerar: considerar
       });
     }
   }
@@ -820,25 +828,11 @@ function ejecutarDescuentoSaldos(idOp, dias) {
   for (var k = 1; k < dataOps.length; k++) {
     if (String(dataOps[k][0]) === String(idOp)) {
       var fila    = k + 1;
-      // Índices base-0: T=[19], U=[20], V=[21]
-      // getRange() es base-1: col T=20, U=21, V=22, O=15
-      var tomados = Number(dataOps[k][19] || 0); // Col T: acumulado tomados del periodo
-      var ant     = Number(dataOps[k][20] || 0); // Col U: saldo periodo anterior
-      var act     = Number(dataOps[k][21] || 0); // Col V: saldo periodo actual (proporcionales)
-
-      // Descontar primero del saldo anterior y luego del actual
-      var resto = dias;
-      if (ant >= resto) { ant -= resto; resto = 0; }
-      else              { resto -= ant; ant = 0;   }
-      act -= resto;
-
-      sheetOps.getRange(fila, 20).setValue(tomados + dias); // Col T: acumular días tomados
-      sheetOps.getRange(fila, 21).setValue(ant);            // Col U: saldo anterior reducido
-      sheetOps.getRange(fila, 22).setValue(act);            // Col V: saldo actual reducido
-      sheetOps.getRange(fila, 15).setValue(ant + act);      // Col O: total disponible
-      // NOTA: Col P (SALDO_INICIAL) [getRange fila,16] NO se toca aquí intencionalmente.
-      // Col P guarda el arranque limpio del periodo para que actualizarSaldosYAniversarios
-      // pueda leerlo correctamente sin el efecto de los descuentos parciales.
+      // Solo acumulamos Col T (días tomados). Col U, V y O los recalcula
+      // actualizarSaldosYAniversarios en cada ejecución del trigger diario.
+      var tomados = Number(dataOps[k][19] || 0); // Col T: acumulado días tomados
+      sheetOps.getRange(fila, 20).setValue(tomados + dias); // Col T: sumar días de esta solicitud
+      // Col U (21), Col V (22), Col O (15): NO se tocan — los recalcula el trigger
       break;
     }
   }
@@ -890,6 +884,7 @@ function obtenerDatosConsulta() {
       clave:           String(dataOps[i][6]),
       ingreso:         dataOps[i][8] instanceof Date ? Utilities.formatDate(dataOps[i][8], "GMT-6", "dd/MM/yyyy") : String(dataOps[i][8]),
       totalDisponible: Math.floor(Number(dataOps[i][14]) || 0),
+      saldoInicial:    Math.floor(Number(dataOps[i][15]) || 0),
       dispAnt:         Math.floor(Number(dataOps[i][20]) || 0),
       proporcionales:  Math.floor(Number(dataOps[i][18]) || 0),
       diasTomados:     Math.floor(Number(dataOps[i][19]) || 0),
@@ -3164,4 +3159,112 @@ function subirAdjuntoEvaluacion(b64, filename, mimetype) {
   var file    = folder.createFile(blob);
   file.setSharing(DriveApp.Access.ANYONE_WITH_LINK, DriveApp.Permission.VIEW);
   return file.getUrl();
+}
+
+// ══════════════════════════════════════════════════════════
+//  TELEGRAM: NOTIFICACIÓN DIARIA SOLICITUDES PENDIENTES
+// ══════════════════════════════════════════════════════════
+
+function enviarNotificacionTelegramPendientes() {
+  var TELEGRAM_TOKEN = '7947767393:AAFmZUcSTnV5gvP6u_UsBcSHlz-0s9x1kSQ';
+  var CHAT_ID = '625827165';
+  var DEPLOY_URL = 'https://script.google.com/macros/s/AKfycbwVRAgJccVKU6TgYD3NN2KZjX1zwxwIYUuG9FiVTmJRPoW4SkIThAPbH5w408oBb73l/exec';
+
+  var pendientes = obtenerSolicitudesEstado('SOLICITADO');
+  var n = pendientes.length;
+
+  if (n === 0) return;
+
+  var urlAutorizar = DEPLOY_URL + '?modulo=AUTORIZAR';
+
+  var texto = '🔔 *Solicitudes de Vacaciones Pendientes*\n\n'
+    + 'Tienes *' + n + ' solicitud' + (n === 1 ? '' : 'es') + ' pendiente' + (n === 1 ? '' : 's') + '* por autorizar.\n\n'
+    + 'Toca el botón para revisar y autorizar desde tu celular:';
+
+  var payload = {
+    chat_id: CHAT_ID,
+    text: texto,
+    parse_mode: 'Markdown',
+    reply_markup: {
+      inline_keyboard: [[
+        {
+          text: '✅ Autorizar Solicitudes (' + n + ')',
+          url: urlAutorizar
+        }
+      ]]
+    }
+  };
+
+  var options = {
+    method: 'post',
+    contentType: 'application/json',
+    payload: JSON.stringify(payload),
+    muteHttpExceptions: true
+  };
+
+  var url = 'https://api.telegram.org/bot' + TELEGRAM_TOKEN + '/sendMessage';
+  var response = UrlFetchApp.fetch(url, options);
+  var result = JSON.parse(response.getContentText());
+
+  if (!result.ok) {
+    console.error('Error Telegram: ' + JSON.stringify(result));
+  } else {
+    console.log('Notificación Telegram enviada. Pendientes: ' + n);
+  }
+}
+
+function crearTriggerDiarioTelegram() {
+  var triggers = ScriptApp.getProjectTriggers();
+  for (var i = 0; i < triggers.length; i++) {
+    if (triggers[i].getHandlerFunction() === 'enviarNotificacionTelegramPendientes') {
+      ScriptApp.deleteTrigger(triggers[i]);
+    }
+  }
+  ScriptApp.newTrigger('enviarNotificacionTelegramPendientes')
+    .timeBased()
+    .atHour(14)
+    .everyDays(1)
+    .create();
+  console.log('Trigger diario creado correctamente. Se ejecutará cada día a las 8 AM hora México.');
+}
+
+// =================================================================================
+// ══════════════════  TRIGGER DIARIO — VACACIONES  ════════════════════════════════
+// =================================================================================
+
+/**
+ * Crea un trigger que ejecuta actualizarSaldosYAniversarios() cada día entre 1 y 2 AM.
+ * EJECUTAR SOLO UNA VEZ manualmente desde el editor de Apps Script.
+ * Si ya existe un trigger con ese nombre lo elimina primero para evitar duplicados.
+ */
+function crearTriggerDiarioVacaciones() {
+  // Eliminar triggers anteriores de esta misma función para no duplicar
+  var triggers = ScriptApp.getProjectTriggers();
+  for (var i = 0; i < triggers.length; i++) {
+    if (triggers[i].getHandlerFunction() === 'actualizarSaldosYAniversarios') {
+      ScriptApp.deleteTrigger(triggers[i]);
+    }
+  }
+  // Crear el trigger diario entre 1 y 2 AM
+  ScriptApp.newTrigger('actualizarSaldosYAniversarios')
+    .timeBased()
+    .everyDays(1)
+    .atHour(1)
+    .create();
+  Logger.log('Trigger diario de vacaciones creado correctamente.');
+}
+
+/**
+ * Elimina el trigger diario de vacaciones (usar si necesitas desactivarlo).
+ */
+function eliminarTriggerDiarioVacaciones() {
+  var triggers = ScriptApp.getProjectTriggers();
+  var eliminados = 0;
+  for (var i = 0; i < triggers.length; i++) {
+    if (triggers[i].getHandlerFunction() === 'actualizarSaldosYAniversarios') {
+      ScriptApp.deleteTrigger(triggers[i]);
+      eliminados++;
+    }
+  }
+  Logger.log('Triggers eliminados: ' + eliminados);
 }
