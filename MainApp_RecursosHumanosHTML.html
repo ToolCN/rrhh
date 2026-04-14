@@ -4319,7 +4319,7 @@ function _aus_generarExcelJS(datosAnio, datosMes, meses3, anio, mes){
 
   // ── Tabla por semana del mes actual ──
   ws1.getRow(19).height = 22;
-  ws1.mergeCells('A19:F19');
+  ws1.mergeCells('A19:G19');
   var semTit = ws1.getCell('A19');
   semTit.value = '📅  DETALLE POR SEMANAS — '+MESES_NOMBRES[mes]+' '+anio;
   applyStyle(semTit, {
@@ -4328,50 +4328,104 @@ function _aus_generarExcelJS(datosAnio, datosMes, meses3, anio, mes){
     alignment:{horizontal:'center', vertical:'middle'}
   });
 
-  var hdrs2 = ['Semana','Total Faltas','Justificadas','Injustificadas','Empleados'];
-  var cols2 = ['A','B','C','D','E'];
+  // Columna A=Mes, B=Semana, C=Total, D=Justificadas, E=Injustificadas, F=Área más faltas
+  var hdrs2 = ['Mes','Semana','Total Faltas','Justificadas','Injustificadas','Área con más faltas'];
+  var cols2 = ['A','B','C','D','E','F'];
   hdrs2.forEach(function(h,i){
     var cell = ws1.getCell(cols2[i]+'20');
     cell.value = h;
     applyStyle(cell, hdrStyle(colNaranja));
   });
   ws1.getRow(20).height = 20;
+  ws1.getColumn('A').width = 12;
+  ws1.getColumn('F').width = 28;
 
   var porSem = {};
   var semOrden = [];
   (datosMes||[]).forEach(function(r){
-    var s   = _aus_semanaDelMes(r.fecha||'');
     var san = _aus_semanaAnio(r.fecha||'');
-    if(!porSem[s]) { porSem[s] = {t:0,j:0,i:0,emp:{},semAnio:san}; semOrden.push(s); }
-    porSem[s].t++;
-    if((r.justificado||'').toUpperCase()==='SI') porSem[s].j++;
-    else porSem[s].i++;
-    porSem[s].emp[r.empleado] = true;
+    if(!porSem[san]) { porSem[san] = {t:0,j:0,i:0,emp:{},semAnio:san}; semOrden.push(san); }
+    porSem[san].t++;
+    if((r.justificado||'').toUpperCase()==='SI') porSem[san].j++;
+    else porSem[san].i++;
+    porSem[san].emp[r.empleado] = (porSem[san].emp[r.empleado]||0)+1;
   });
   semOrden.sort(function(a,b){return a-b;});
-  // eliminar duplicados
   semOrden = semOrden.filter(function(v,i,a){return a.indexOf(v)===i;});
 
   var semTotT=0, semTotJ=0, semTotI=0;
   var semRowStart = 21;
-  semOrden.forEach(function(s, si){
+  var semCurRow = semRowStart;
+
+  // Agrupar semanas por mes para combinar col A
+  var mesSems = {};
+  semOrden.forEach(function(s){
     var ds = porSem[s];
-    if(!ds || ds.t === 0) return;
-    var rowSem = ws1.getRow(semRowStart+si);
-    rowSem.height = 18;
-    semTotT += ds.t; semTotJ += ds.j; semTotI += ds.i;
-    var empList = Object.keys(ds.emp).join(', ');
-    var svs = ['Semana '+ds.semAnio, ds.t, ds.j, ds.i, empList];
-    svs.forEach(function(v,ci){
-      var cell = ws1.getCell(cols2[ci]+(semRowStart+si));
-      cell.value = v;
-      applyStyle(cell, cellStyle(si%2===0?colBlanco:colGrisH));
+    if(!ds || ds.t===0) return;
+    var mesS = mes;
+    (datosMes||[]).forEach(function(r){
+      if(_aus_semanaAnio(r.fecha||'')===s){
+        var p=(r.fecha||'').split('/');
+        if(p.length===3) mesS=parseInt(p[1],10)-1;
+      }
+    });
+    if(!mesSems[mesS]) mesSems[mesS]=[];
+    mesSems[mesS].push(s);
+  });
+
+  var mesKeys = Object.keys(mesSems).map(Number).sort(function(a,b){return a-b;});
+  mesKeys.forEach(function(mesK){
+    var semsDelMes = mesSems[mesK];
+    var numSems = semsDelMes.length;
+    if(numSems > 1){
+      ws1.mergeCells('A'+semCurRow+':A'+(semCurRow+numSems-1));
+    }
+    var cMes = ws1.getCell('A'+semCurRow);
+    cMes.value = MESES_CORTOS[mesK]+' '+anio;
+    var stMes = cellStyle(colNaranjaL, colNaranja, true);
+    stMes.alignment = {horizontal:'center', vertical:'middle'};
+    applyStyle(cMes, stMes);
+
+    semsDelMes.forEach(function(s, si){
+      var ds = porSem[s];
+      var bgS = si%2===0 ? colBlanco : colGrisH;
+      semTotT += ds.t; semTotJ += ds.j; semTotI += ds.i;
+      var areaSem = {};
+      (datosMes||[]).forEach(function(r){
+        if(_aus_semanaAnio(r.fecha||'')===s){
+          var ar = r.departamento||'Sin área';
+          areaSem[ar] = (areaSem[ar]||0)+1;
+        }
+      });
+      var topArea = '—'; var topCnt = 0;
+      Object.keys(areaSem).forEach(function(ar){
+        if(areaSem[ar]>topCnt){ topCnt=areaSem[ar]; topArea=ar+' ('+areaSem[ar]+')'; }
+      });
+      ws1.getRow(semCurRow).height = 18;
+      var svs = ['', 'Sem. '+ds.semAnio, ds.t, ds.j, ds.i, topArea];
+      svs.forEach(function(v,ci){
+        if(ci===0) return;
+        var cell = ws1.getCell(cols2[ci]+semCurRow);
+        cell.value = v;
+        var st = cellStyle(bgS);
+        if(ci===2 && ds.t>0) st.font.color={argb:colNaranja};
+        if(ci===3 && ds.j>0) st.font.color={argb:colVerde};
+        if(ci===4 && ds.i>0) st.font.color={argb:colRojo};
+        if(ci===5){ st.alignment={horizontal:'left',vertical:'middle',indent:1}; }
+        applyStyle(cell, st);
+      });
+      semCurRow++;
     });
   });
-  var totRowN = semRowStart + semOrden.length;
-  var rowSemTot = ws1.getRow(totRowN);
-  rowSemTot.height = 20;
-  ['TOTAL', semTotT, semTotJ, semTotI, ''].forEach(function(v,ci){
+
+  var totRowN = semCurRow;
+  ws1.getRow(totRowN).height = 20;
+  ws1.mergeCells('A'+totRowN+':B'+totRowN);
+  var cellTotLabel = ws1.getCell('A'+totRowN);
+  cellTotLabel.value = 'TOTAL';
+  applyStyle(cellTotLabel, hdrStyle(colAzulOsc));
+  ['', '', semTotT, semTotJ, semTotI, ''].forEach(function(v,ci){
+    if(ci<2) return;
     var cell = ws1.getCell(cols2[ci]+totRowN);
     cell.value = v;
     applyStyle(cell, hdrStyle(colAzulOsc));
@@ -4381,8 +4435,8 @@ function _aus_generarExcelJS(datosAnio, datosMes, meses3, anio, mes){
   // Columnas H-O para gráfica visual de barras
   ws1.getColumn('H').width = 6;
   ws1.getColumn('I').width = 14;
-  ws1.getColumn('J').width = 6;
-  ws1.getColumn('K').width = 6;
+  ws1.getColumn('J').width = 8;
+  ws1.getColumn('K').width = 10;  // INJUST. más ancha para no cortarse
   ws1.getColumn('L').width = 6;
   ws1.getColumn('M').width = 6;
   ws1.getColumn('N').width = 6;
@@ -4443,6 +4497,7 @@ function _aus_generarExcelJS(datosAnio, datosMes, meses3, anio, mes){
   cLegI.value = 'INJUST.';
   applyStyle(cLegI, hdrStyle(colRojo));
 
+
   // ══════════════════════════════════════════════════════════════════
   //  HOJA 2 — Detalle del mes
   // ══════════════════════════════════════════════════════════════════
@@ -4453,7 +4508,7 @@ function _aus_generarExcelJS(datosAnio, datosMes, meses3, anio, mes){
   ws2.views = [{showGridLines:false}];
 
   // Título
-  ws2.mergeCells('A1:J1');
+  ws2.mergeCells('A1:K1');
   var t2 = ws2.getCell('A1');
   t2.value = '📋  DETALLE DE AUSENTISMO — '+MESES_NOMBRES[mes].toUpperCase()+' '+anio;
   applyStyle(t2, {
@@ -4463,7 +4518,7 @@ function _aus_generarExcelJS(datosAnio, datosMes, meses3, anio, mes){
   });
   ws2.getRow(1).height = 38;
 
-  ws2.mergeCells('A2:J2');
+  ws2.mergeCells('A2:K2');
   var sub2 = ws2.getCell('A2');
   sub2.value = 'Generado: '+new Date().toLocaleDateString('es-MX')+' | Total registros: '+datosMes.length;
   applyStyle(sub2, {
@@ -4475,11 +4530,11 @@ function _aus_generarExcelJS(datosAnio, datosMes, meses3, anio, mes){
   ws2.getRow(3).height = 8;
 
   // Anchos columnas hoja 2
-  var w2cols = {A:10, B:18, C:28, D:22, E:14, F:20, G:14, H:18, I:20, J:20};
+  var w2cols = {A:14, B:10, C:22, D:8, E:24, F:12, G:12, H:36, I:20, J:20};
   Object.keys(w2cols).forEach(function(c){ ws2.getColumn(c).width = w2cols[c]; });
 
   // ── Tabla detalle del mes ──
-  ws2.mergeCells('A4:J4');
+  ws2.mergeCells('A4:K4');
   var detTit = ws2.getCell('A4');
   detTit.value = '📌  REGISTROS DEL MES';
   applyStyle(detTit, {
@@ -4489,7 +4544,7 @@ function _aus_generarExcelJS(datosAnio, datosMes, meses3, anio, mes){
   });
   ws2.getRow(4).height = 22;
 
-  var detHdrs = ['Folio','Semana','Empleado','Departamento','Turno','Motivo','Justificado','Fecha'];
+  var detHdrs = ['Folio','Semana','Departamento','Turno','Motivo','Justificado','Fecha','Empleado'];
   var detCols  = ['A','B','C','D','E','F','G','H'];
   detHdrs.forEach(function(h,i){
     var cell = ws2.getCell(detCols[i]+'5');
@@ -4504,19 +4559,21 @@ function _aus_generarExcelJS(datosAnio, datosMes, meses3, anio, mes){
   });
 
   detSorted.forEach(function(r, ri){
-    var sem = _aus_semanaDelMes(r.fecha||'');
+    var san = _aus_semanaAnio(r.fecha||'');
     var just = (r.justificado||'').toUpperCase()==='SI';
     var rowN = 6+ri;
     var rw = ws2.getRow(rowN);
     rw.height = 18;
     var bgD = ri%2===0 ? colBlanco : colGrisH;
-    var vals = [r.folio, 'Semana '+sem, r.empleado, r.departamento||'—', r.turno||'—', r.motivo||'—', just?'✔ Sí':'✘ No', r.fecha||''];
+    // Orden: Folio, Semana(ISO), Depto, Turno, Motivo, Justificado, Fecha, Empleado
+    var vals = [r.folio, 'Sem. '+san, r.departamento||'—', r.turno||'—', r.motivo||'—', just?'✔ Sí':'✘ No', r.fecha||'', r.empleado||'—'];
     vals.forEach(function(v,ci){
       var cell = ws2.getCell(detCols[ci]+rowN);
       cell.value = v;
       var st = cellStyle(bgD);
-      if(ci===6){ st.font.color = {argb: just?colVerde:colRojo}; st.font.bold = true; }
+      if(ci===5){ st.font.color = {argb: just?colVerde:colRojo}; st.font.bold = true; }
       if(ci===0){ st.font.color = {argb:colNaranja}; st.font.bold=true; }
+      if(ci===7){ st.alignment = {horizontal:'left', vertical:'middle', indent:1}; }
       applyStyle(cell, st);
     });
   });
@@ -4526,7 +4583,7 @@ function _aus_generarExcelJS(datosAnio, datosMes, meses3, anio, mes){
   ws2.getRow(nextRow2).height = 8;
   nextRow2++;
 
-  ws2.mergeCells('A'+nextRow2+':J'+nextRow2);
+  ws2.mergeCells('A'+nextRow2+':H'+nextRow2);
   var semTit2 = ws2.getCell('A'+nextRow2);
   semTit2.value = '📅  FALTAS POR SEMANA DEL MES';
   applyStyle(semTit2, {
@@ -4545,6 +4602,8 @@ function _aus_generarExcelJS(datosAnio, datosMes, meses3, anio, mes){
     applyStyle(cell, hdrStyle(colAzulOsc));
   });
   ws2.getRow(nextRow2).height = 20;
+  // Guardar fila de HEADERS de semanas (para tabla áreas — el título combina A:J así que no se puede usar)
+  var semSeccionInicioRow = nextRow2;  // fila de headers semanas, G-I están libres aquí
   nextRow2++;
 
   var semT2=0, semJ2=0, semI2=0;
@@ -4552,7 +4611,7 @@ function _aus_generarExcelJS(datosAnio, datosMes, meses3, anio, mes){
     var ds2 = porSem[s];
     if(!ds2 || ds2.t === 0) return;
     semT2+=ds2.t; semJ2+=ds2.j; semI2+=ds2.i;
-    var empArr = Object.keys(ds2.emp);
+    var empArr = Object.keys(ds2.emp).sort();
     var bgSem  = si%2===0 ? colBlanco : colGrisH;
     var numEmp = empArr.length;
     // Fila cabecera de la semana (combina col A con tantas filas como empleados)
@@ -4580,13 +4639,16 @@ function _aus_generarExcelJS(datosAnio, datosMes, meses3, anio, mes){
       st.alignment.vertical = 'middle';
       applyStyle(cell, st);
     });
-    // Empleados listados uno por fila en col E
+    // Empleados listados uno por fila en col E con conteo de faltas
     empArr.forEach(function(emp, ei){
       var rowEmp = nextRow2 + ei;
-      ws2.getRow(rowEmp).height = 16;
+      ws2.getRow(rowEmp).height = 18;
       var cEmp = ws2.getCell('E'+rowEmp);
-      cEmp.value = (ei+1)+'. '+emp;
-      applyStyle(cEmp, cellStyle(bgSem));
+      var nFaltas = ds2.emp[emp]||1;
+      cEmp.value = (ei+1)+'. '+emp+' ('+nFaltas+' falta'+(nFaltas>1?'s':'')+')';
+      var stEmp = cellStyle(bgSem);
+      stEmp.alignment = {horizontal:'left', vertical:'middle', wrapText:false, indent:1};
+      applyStyle(cEmp, stEmp);
     });
     nextRow2 += numEmp;
     // Línea separadora
@@ -4602,8 +4664,72 @@ function _aus_generarExcelJS(datosAnio, datosMes, meses3, anio, mes){
   ws2.getRow(nextRow2).height = 20;
   nextRow2 += 2;
 
+  // ── Tabla faltas por área del mes — posicionada a la DERECHA de la tabla semanas ──
+  var porArea = {};
+  (datosMes||[]).forEach(function(r){
+    var area = r.departamento||'Sin área';
+    porArea[area] = (porArea[area]||0)+1;
+  });
+  var areaKeys = Object.keys(porArea).sort(function(a,b){ return porArea[b]-porArea[a]; });
+  var totalAreaFaltas = (datosMes||[]).length;
+
+  // Anclar la tabla de áreas a la derecha desde la misma fila donde empieza la sección semanas
+  var arTitleRow = semSeccionInicioRow;
+
+  ws2.getColumn('I').width = 30;
+  ws2.getColumn('J').width = 12;
+  ws2.getColumn('K').width = 10;
+
+  ws2.mergeCells('I'+arTitleRow+':K'+arTitleRow);
+  var arTit = ws2.getCell('I'+arTitleRow);
+  arTit.value = '🏢  FALTAS POR ÁREA — '+MESES_NOMBRES[mes]+' '+anio;
+  applyStyle(arTit, {
+    font:{bold:true, size:11, color:{argb:'FFFFFFFF'}},
+    fill:{type:'pattern', pattern:'solid', fgColor:{argb:colNaranja}},
+    alignment:{horizontal:'center', vertical:'middle'}
+  });
+  ws2.getRow(arTitleRow).height = 22;
+  var arHdrRow = arTitleRow+1;
+  ['Área','Faltas','%'].forEach(function(h,i){
+    var c = ['I','J','K'][i];
+    var cell = ws2.getCell(c+arHdrRow);
+    cell.value = h;
+    applyStyle(cell, hdrStyle(colNaranja));
+  });
+  ws2.getRow(arHdrRow).height = 20;
+  var arDataStart = arHdrRow+1;
+  areaKeys.forEach(function(area, ai){
+    var cnt = porArea[area];
+    var pct = totalAreaFaltas>0 ? Math.round(cnt/totalAreaFaltas*100) : 0;
+    var bgAr = ai%2===0 ? colBlanco : colGrisH;
+    var row2A = ws2.getRow(arDataStart+ai);
+    row2A.height = 18;
+    var cellA = ws2.getCell('I'+(arDataStart+ai));
+    cellA.value = area;
+    var stA = cellStyle(bgAr); stA.alignment.horizontal='left'; stA.alignment.indent=1;
+    applyStyle(cellA, stA);
+    var cellN = ws2.getCell('J'+(arDataStart+ai));
+    cellN.value = cnt;
+    applyStyle(cellN, cellStyle(bgAr, cnt>3?colRojo:(cnt>1?colNaranja:colTexto), cnt>1));
+    var cellP = ws2.getCell('K'+(arDataStart+ai));
+    cellP.value = pct+'%';
+    applyStyle(cellP, cellStyle(bgAr, colGris, false));
+  });
+  // Fila total área
+  var arTotRow = arDataStart + areaKeys.length;
+  ['TOTAL', totalAreaFaltas, '100%'].forEach(function(v,i){
+    var c = ['I','J','K'][i];
+    var cell = ws2.getCell(c+arTotRow);
+    cell.value = v;
+    applyStyle(cell, hdrStyle(colAzulOsc));
+  });
+  ws2.getRow(arTotRow).height = 20;
+
+
+  nextRow2 = Math.max(nextRow2, arTotRow+2);
+
   // ── Tabla 3 meses anteriores ──
-  ws2.mergeCells('A'+nextRow2+':J'+nextRow2);
+  ws2.mergeCells('A'+nextRow2+':H'+nextRow2);
   var hist3Tit = ws2.getCell('A'+nextRow2);
   hist3Tit.value = '📆  HISTORIAL DE FALTAS — ÚLTIMOS 3 MESES';
   applyStyle(hist3Tit, {
@@ -4614,28 +4740,43 @@ function _aus_generarExcelJS(datosAnio, datosMes, meses3, anio, mes){
   ws2.getRow(nextRow2).height = 22;
   nextRow2++;
 
-  // Consolidar empleados de meses anteriores
-  var empHist = {};
-  meses3.forEach(function(mb){
-    (mb.datos||[]).forEach(function(r){
-      var nm = MESES_CORTOS[mb.mes]+' '+mb.anio;
-      if(!empHist[r.empleado]) empHist[r.empleado] = {};
-      empHist[r.empleado][nm] = (empHist[r.empleado][nm]||0)+1;
-    });
-  });
+  // Consolidar: mes actual + 3 meses anteriores
+  // nmAct = mes actual, nm0/nm1/nm2 = anteriores más reciente a más antiguo
+  var nmAct = MESES_CORTOS[mes]+' '+anio;
   var nm0 = MESES_CORTOS[meses3[0]?meses3[0].mes:0]+' '+(meses3[0]?meses3[0].anio:'');
   var nm1 = MESES_CORTOS[meses3[1]?meses3[1].mes:0]+' '+(meses3[1]?meses3[1].anio:'');
   var nm2 = MESES_CORTOS[meses3[2]?meses3[2].mes:0]+' '+(meses3[2]?meses3[2].anio:'');
 
-  // Ajustar anchos para historial: empleado amplio, meses y total similares
-  ws2.getColumn('A').width = 32;
-  ws2.getColumn('B').width = 14;
+  var empHist = {};
+  // Agregar mes actual
+  (datosMes||[]).forEach(function(r){
+    if(!empHist[r.empleado]) empHist[r.empleado] = {};
+    if(!empHist[r.empleado][nmAct]) empHist[r.empleado][nmAct] = {t:0,j:0};
+    empHist[r.empleado][nmAct].t++;
+    if((r.justificado||'').toUpperCase()==='SI') empHist[r.empleado][nmAct].j++;
+  });
+  // Agregar 3 meses anteriores
+  meses3.forEach(function(mb){
+    var nm = MESES_CORTOS[mb.mes]+' '+mb.anio;
+    (mb.datos||[]).forEach(function(r){
+      if(!empHist[r.empleado]) empHist[r.empleado] = {};
+      if(!empHist[r.empleado][nm]) empHist[r.empleado][nm] = {t:0,j:0};
+      empHist[r.empleado][nm].t++;
+      if((r.justificado||'').toUpperCase()==='SI') empHist[r.empleado][nm].j++;
+    });
+  });
+
+  // Anchos columnas historial: #, Empleado, mes actual, mes-1, mes-2, mes-3, Total
+  ws2.getColumn('A').width = 6;
+  ws2.getColumn('B').width = 32;
   ws2.getColumn('C').width = 14;
   ws2.getColumn('D').width = 14;
   ws2.getColumn('E').width = 14;
+  ws2.getColumn('F').width = 14;
+  ws2.getColumn('G').width = 10;
 
-  var h3hdrs = ['Empleado', nm0, nm1, nm2, 'Total'];
-  var h3cols = ['A','B','C','D','E'];
+  var h3hdrs = ['#', 'Empleado', nmAct, nm0, nm1, nm2, 'Total'];
+  var h3cols = ['A','B','C','D','E','F','G'];
   h3hdrs.forEach(function(h,i){
     var cell = ws2.getCell(h3cols[i]+nextRow2);
     cell.value = h;
@@ -4644,44 +4785,62 @@ function _aus_generarExcelJS(datosAnio, datosMes, meses3, anio, mes){
   ws2.getRow(nextRow2).height = 22;
   nextRow2++;
 
-  var empKeys = Object.keys(empHist).sort();
+  // Ordenar: primero los que tienen faltas en mes actual, luego resto alfabético
+  function _hVal(emp, nm){ return empHist[emp]&&empHist[emp][nm] ? empHist[emp][nm].t : 0; }
+  function _hJust(emp, nm){ return empHist[emp]&&empHist[emp][nm] ? empHist[emp][nm].j : 0; }
+  function _hStr(emp, nm){
+    var t = _hVal(emp,nm);
+    var j = _hJust(emp,nm);
+    if(t===0) return '—';
+    return j>0 ? t+' ('+j+')' : ''+t;
+  }
+
+  var empKeys = Object.keys(empHist).filter(function(e){
+    return _hVal(e,nmAct) > 0;
+  }).sort(function(a,b){
+    var totA = _hVal(a,nmAct)+_hVal(a,nm0)+_hVal(a,nm1)+_hVal(a,nm2);
+    var totB = _hVal(b,nmAct)+_hVal(b,nm0)+_hVal(b,nm1)+_hVal(b,nm2);
+    if(totB !== totA) return totB-totA;
+    return a.localeCompare(b);
+  });
+
   empKeys.forEach(function(emp, ei){
-    var f0  = empHist[emp][nm0]||0;
-    var f1  = empHist[emp][nm1]||0;
-    var f2  = empHist[emp][nm2]||0;
-    var tot = f0+f1+f2;
-    var bgH = ei%2===0 ? colBlanco : colGrisH;
-    // Celda empleado combinada en dos filas para dar espacio al nombre largo
-    ws2.mergeCells('A'+nextRow2+':A'+(nextRow2+1));
-    var cEmpH = ws2.getCell('A'+nextRow2);
+    var fAct = _hVal(emp,nmAct);
+    var f0v  = _hVal(emp,nm0);
+    var f1v  = _hVal(emp,nm1);
+    var f2v  = _hVal(emp,nm2);
+    var tot  = fAct+f0v+f1v+f2v;
+    var bgH  = colNaranjaL;
+    var rw = ws2.getRow(nextRow2);
+    rw.height = 18;
+    // Número
+    var cNum = ws2.getCell('A'+nextRow2);
+    cNum.value = ei+1;
+    var stN = cellStyle(bgH, colGris, false);
+    stN.alignment = {horizontal:'center', vertical:'middle'};
+    applyStyle(cNum, stN);
+    // Empleado
+    var cEmpH = ws2.getCell('B'+nextRow2);
     cEmpH.value = emp;
-    applyStyle(cEmpH, {
-      font:{bold:false, color:{argb:colTexto}, size:10},
-      fill:{type:'pattern', pattern:'solid', fgColor:{argb:bgH}},
-      alignment:{horizontal:'left', vertical:'middle', wrapText:true, indent:1},
-      border:{top:{style:'thin',color:{argb:'FFE2E8F0'}},left:{style:'thin',color:{argb:'FFE2E8F0'}},bottom:{style:'thin',color:{argb:'FFE2E8F0'}},right:{style:'thin',color:{argb:'FFE2E8F0'}}}
-    });
-    // Valores en primera fila
-    [f0||'—', f1||'—', f2||'—', tot].forEach(function(v,ci){
-      var cell = ws2.getCell(h3cols[ci+1]+nextRow2);
+    var stE = cellStyle(bgH, colNaranja, true);
+    stE.alignment = {horizontal:'left', vertical:'middle', indent:1};
+    applyStyle(cEmpH, stE);
+    // Faltas por mes con justificadas entre paréntesis si aplica
+    [_hStr(emp,nmAct), _hStr(emp,nm0), _hStr(emp,nm1), _hStr(emp,nm2), tot].forEach(function(v,ci){
+      var cell = ws2.getCell(h3cols[ci+2]+nextRow2);
       cell.value = v;
-      var st = cellStyle(bgH, ci===3?(tot>3?colRojo:(tot>1?colNaranja:colTexto)):colTexto, ci===3);
-      st.alignment.vertical = 'middle';
+      var color = ci===4 ? (tot>3?colRojo:(tot>1?colNaranja:colTexto)) : colTexto;
+      var st = cellStyle(bgH, color, ci===4);
+      st.alignment = {horizontal:'center', vertical:'middle'};
       applyStyle(cell, st);
     });
-    // Segunda fila vacía para dar altura (B-E también combinadas)
-    ws2.mergeCells('B'+nextRow2+':B'+(nextRow2+1));
-    ws2.mergeCells('C'+nextRow2+':C'+(nextRow2+1));
-    ws2.mergeCells('D'+nextRow2+':D'+(nextRow2+1));
-    ws2.mergeCells('E'+nextRow2+':E'+(nextRow2+1));
-    ws2.getRow(nextRow2).height   = 16;
-    ws2.getRow(nextRow2+1).height = 8;
-    nextRow2 += 2;
+    nextRow2++;
   });
+
   if(empKeys.length===0){
-    ws2.mergeCells('A'+nextRow2+':E'+nextRow2);
+    ws2.mergeCells('A'+nextRow2+':G'+nextRow2);
     var noEmp = ws2.getCell('A'+nextRow2);
-    noEmp.value = 'Sin registros en los 3 meses anteriores';
+    noEmp.value = 'Sin registros';
     applyStyle(noEmp, cellStyle(colGrisH, colGris, false));
     ws2.getRow(nextRow2).height = 18;
   }
