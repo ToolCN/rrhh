@@ -1,0 +1,336 @@
+function loadActas() {
+  showLoader('Cargando módulo de sanciones...');
+  google.script.run
+    .withSuccessHandler(function(data) { hideLoader(); _sancionesData = data; renderFormularioActa(); })
+    .withFailureHandler(function(e) { hideLoader(); Swal.fire('Error',''+e,'error'); })
+    .obtenerCatalogosSanciones();
+}
+
+function renderFormularioActa() {
+  var emp = _sancionesData ? _sancionesData.empleados : [];
+  // Guardar empleados en variable global para el autocomplete
+  window._actaEmpleados = emp;
+  var optsTipo = TIPOS_FALTA.map(function(t){return '<option>'+t+'</option>';}).join('');
+  var optsSanc = TIPOS_SANCION.map(function(t){return '<option>'+t+'</option>';}).join('');
+  var optsArt  = ARTICULOS_REGLAMENTO.map(function(t){return '<option>'+t+'</option>';}).join('');
+
+  document.getElementById('content-area').innerHTML=
+    '<div class="card-pro mb-3">'
+    +'<div class="d-flex align-items-center gap-3 mb-4">'
+    +'<div style="width:48px;height:48px;border-radius:12px;background:#dc262620;display:flex;align-items:center;justify-content:center">'
+    +'<i class="fas fa-file-alt" style="color:#dc2626;font-size:1.4rem"></i></div>'
+    +'<div><h5 class="fw-bold m-0">Nueva Acta Administrativa</h5>'
+    +'<p class="text-muted small m-0">Completa los datos para generar el acta</p></div></div>'
+
+    +'<h6 class="fw-bold text-muted mb-3" style="font-size:.75rem;letter-spacing:.08em;text-transform:uppercase"><i class="fas fa-user me-2"></i>Datos del Empleado</h6>'
+    +'<div class="row g-3 mb-4">'
+    // ── Autocomplete empleado ──
+    +'<div class="col-md-6"><label class="form-label small fw-bold">Empleado *</label>'
+    +'<div style="position:relative">'
+    +'<input id="acta-emp-input" class="form-control" placeholder="Escribe el nombre..." autocomplete="off"'
+    +' oninput="acta_filtrarEmpleados()" onblur="setTimeout(function(){acta_cerrarAC();},200)">'
+    +'<div id="acta-emp-ac" style="display:none;position:absolute;top:100%;left:0;right:0;background:white;'
+    +'border:1px solid #e2e8f0;border-radius:0 0 10px 10px;box-shadow:0 8px 24px rgba(0,0,0,.12);z-index:999;max-height:220px;overflow-y:auto"></div>'
+    +'<input type="hidden" id="acta-empleado" value="">'
+    +'</div>'
+    +'<div id="acta-historial-alert" style="display:none;margin-top:8px;padding:10px;border-radius:8px">'
+    +'<small id="acta-historial-txt" class="fw-bold"></small></div></div>'
+    +'<div class="col-md-3"><label class="form-label small fw-bold">Núm. Empleado</label>'
+    +'<input id="acta-numEmp" class="form-control" readonly style="background:#f8fafc"></div>'
+    +'<div class="col-md-3"><label class="form-label small fw-bold">Fecha del Acta *</label>'
+    +'<input id="acta-fecha" type="date" class="form-control" value="'+_hoyInputDate()+'"></div>'
+    +'<div class="col-md-6"><label class="form-label small fw-bold">Departamento / Área</label>'
+    +'<input id="acta-dept" class="form-control" placeholder="Se carga al seleccionar empleado"></div>'
+    +'<div class="col-md-6"><label class="form-label small fw-bold">Puesto</label>'
+    +'<input id="acta-puesto" class="form-control" placeholder="Se carga al seleccionar empleado"></div>'
+    +'</div>'
+
+    +'<h6 class="fw-bold text-muted mb-3" style="font-size:.75rem;letter-spacing:.08em;text-transform:uppercase"><i class="fas fa-exclamation-triangle me-2"></i>Descripción de la Falta</h6>'
+    +'<div class="row g-3 mb-4">'
+    +'<div class="col-md-6"><label class="form-label small fw-bold">Tipo de Falta *</label>'
+    +'<select id="acta-tipoFalta" class="form-select"><option value="">— Seleccionar —</option>'+optsTipo+'</select></div>'
+    +'<div class="col-md-6"><label class="form-label small fw-bold">Artículo del Reglamento</label>'
+    +'<select id="acta-articulo" class="form-select"><option value="">— Seleccionar —</option>'+optsArt+'</select></div>'
+    +'<div class="col-12"><label class="form-label small fw-bold">Descripción detallada de los hechos *</label>'
+    +'<textarea id="acta-descripcion" class="form-control" rows="4" placeholder="Describe con detalle los hechos que motivaron el acta..."></textarea></div>'
+    +'</div>'
+
+    +'<h6 class="fw-bold text-muted mb-3" style="font-size:.75rem;letter-spacing:.08em;text-transform:uppercase"><i class="fas fa-gavel me-2"></i>Sanción Aplicada</h6>'
+    +'<div class="row g-3 mb-4">'
+    +'<div class="col-md-6"><label class="form-label small fw-bold">Tipo de Sanción *</label>'
+    +'<select id="acta-sancion" class="form-select"><option value="">— Seleccionar —</option>'+optsSanc+'</select></div>'
+    +'<div class="col-md-6"><label class="form-label small fw-bold">Autorizado por</label>'
+    +'<input id="acta-auth" class="form-control" placeholder="Nombre del supervisor/gerente"></div>'
+    +'</div>'
+
+    +'<h6 class="fw-bold text-muted mb-3" style="font-size:.75rem;letter-spacing:.08em;text-transform:uppercase"><i class="fas fa-users me-2"></i>Testigos</h6>'
+    +'<div class="row g-3 mb-4">'
+    +'<div class="col-md-6"><label class="form-label small fw-bold">Testigo 1</label>'
+    +'<input id="acta-t1" class="form-control" placeholder="Nombre completo"></div>'
+    +'<div class="col-md-6"><label class="form-label small fw-bold">Testigo 2</label>'
+    +'<input id="acta-t2" class="form-control" placeholder="Nombre completo (opcional)"></div>'
+    +'</div>'
+
+    +'<div class="mb-4"><label class="form-label small fw-bold">Observaciones adicionales</label>'
+    +'<textarea id="acta-obs" class="form-control" rows="2" placeholder="Cualquier nota adicional..."></textarea></div>'
+
+    +'<div class="d-flex gap-3 justify-content-end">'
+    +'<button class="btn btn-outline-secondary rounded-pill px-4" onclick="loadActas()"><i class="fas fa-undo me-2"></i>Limpiar</button>'
+    +'<button class="btn fw-bold rounded-pill px-5" style="background:#dc2626;color:white" onclick="acta_guardar()"><i class="fas fa-file-alt me-2"></i>Generar Acta</button>'
+    +'</div></div>';
+}
+
+function _hoyInputDate(){
+  var d=new Date();
+  return d.getFullYear()+'-'+('0'+(d.getMonth()+1)).slice(-2)+'-'+('0'+d.getDate()).slice(-2);
+}
+
+// Autocomplete empleados en el formulario de acta
+function acta_filtrarEmpleados(){
+  var q=(document.getElementById('acta-emp-input').value||'').trim().toUpperCase();
+  var ac=document.getElementById('acta-emp-ac');
+  document.getElementById('acta-empleado').value='';
+  if(!q||!window._actaEmpleados){ac.style.display='none';ac.innerHTML='';return;}
+  var matches=window._actaEmpleados.filter(function(e){return e.nombre.toUpperCase().includes(q);});
+  if(!matches.length){ac.style.display='none';ac.innerHTML='';return;}
+  // Construir items sin eventos inline para evitar problemas de comillas
+  ac.innerHTML='';
+  matches.slice(0,12).forEach(function(e){
+    var div=document.createElement('div');
+    div.style.cssText='padding:10px 14px;cursor:pointer;font-size:.85rem;font-weight:500;border-bottom:1px solid #f1f5f9;transition:background .15s';
+    div.innerHTML='<span style="font-weight:700">'+e.nombre+'</span>'
+      +(e.numEmpleado?' <span style="color:#64748b;font-size:.8rem">('+e.numEmpleado+')</span>':'')
+      +(e.area?'<br><small style="color:#64748b">'+e.area+' — '+e.puesto+'</small>':'');
+    div.addEventListener('mouseover',function(){this.style.background='#eff6ff';});
+    div.addEventListener('mouseout', function(){this.style.background='';});
+    div.addEventListener('mousedown',function(ev){ev.preventDefault();acta_elegirEmpleado(e.nombre);});
+    ac.appendChild(div);
+  });
+  ac.style.display='block';
+}
+function acta_elegirEmpleado(nombre){
+  var emp=window._actaEmpleados?window._actaEmpleados.find(function(e){return e.nombre===nombre;}):null;
+  document.getElementById('acta-emp-input').value=nombre;
+  document.getElementById('acta-empleado').value=nombre;
+  document.getElementById('acta-emp-ac').style.display='none';
+  document.getElementById('acta-emp-ac').innerHTML='';
+  if(emp){
+    document.getElementById('acta-numEmp').value =emp.numEmpleado||'';
+    document.getElementById('acta-dept').value   =emp.area       ||'';
+    document.getElementById('acta-puesto').value =emp.puesto     ||'';
+  }
+  acta_mostrarHistorial(nombre);
+}
+function acta_cerrarAC(){
+  var ac=document.getElementById('acta-emp-ac');
+  if(ac){ac.style.display='none';}
+}
+function acta_mostrarHistorial(nom){
+  var alert=document.getElementById('acta-historial-alert');
+  var txt=document.getElementById('acta-historial-txt');
+  if(!nom||!_sancionesData){alert.style.display='none';return;}
+  var count=(_sancionesData.conteoActas||{})[nom]||0;
+  if(count>0){
+    alert.style.display='block';
+    alert.style.background=count>=3?'#fee2e2':'#fef3c7';
+    alert.style.border=count>=3?'1px solid #ef4444':'1px solid #fbbf24';
+    txt.style.color=count>=3?'#b91c1c':'#92400e';
+    txt.innerHTML='<i class="fas fa-exclamation-circle me-1"></i>⚠️ Este empleado tiene <strong>'+count+' acta(s) previa(s)</strong> registradas.';
+  } else {alert.style.display='none';}
+}
+function acta_cargarDatosEmpleado(){
+  // Mantener compatibilidad — ya no se usa pero no romper si se llama
+}
+
+function acta_guardar(){
+  var empleado   =(document.getElementById('acta-empleado').value||document.getElementById('acta-emp-input').value||'').trim();
+  var tipoFalta  =document.getElementById('acta-tipoFalta').value.trim();
+  var descripcion=document.getElementById('acta-descripcion').value.trim();
+  var sancion    =document.getElementById('acta-sancion').value.trim();
+  if(!empleado||!tipoFalta||!descripcion||!sancion){
+    Swal.fire('Campos incompletos','Empleado, Tipo de Falta, Descripción y Sanción son obligatorios.','warning');return;
+  }
+  var fechaVal=document.getElementById('acta-fecha').value;
+  var partes=fechaVal.split('-');
+  var fechaFmt=partes.length===3?partes[2]+'/'+partes[1]+'/'+partes[0]:fechaVal;
+  var datos={
+    fecha:fechaFmt, empleado:empleado,
+    numEmpleado:  document.getElementById('acta-numEmp').value,
+    departamento: document.getElementById('acta-dept').value,
+    puesto:       document.getElementById('acta-puesto').value,
+    tipoFalta:tipoFalta, descripcion:descripcion,
+    articulo:     document.getElementById('acta-articulo').value,
+    sancion:sancion,
+    testigo1:     document.getElementById('acta-t1').value,
+    testigo2:     document.getElementById('acta-t2').value,
+    autorizadoPor:document.getElementById('acta-auth').value,
+    estatus:'ACTIVA',
+    observaciones:document.getElementById('acta-obs').value
+  };
+  toggleSaving(true,'Guardando acta...');
+  google.script.run
+    .withSuccessHandler(function(folio){
+      toggleSaving(false);
+      if(_sancionesData&&_sancionesData.conteoActas){
+        _sancionesData.conteoActas[empleado]=(_sancionesData.conteoActas[empleado]||0)+1;
+      }
+      rhAlert('success','✅ Acta generada','',2000);
+    })
+    .withFailureHandler(function(e){toggleSaving(false);Swal.fire('Error',''+e,'error');})
+    .guardarActaAdministrativa(datos);
+}
+
+function acta_imprimir(datos,folio){
+  var hoy=new Date();
+  var fechaHoy=('0'+hoy.getDate()).slice(-2)+'/'+('0'+(hoy.getMonth()+1)).slice(-2)+'/'+hoy.getFullYear();
+  google.script.run
+    .withSuccessHandler(function(hist){_imprimirActaHTML(datos,folio,hist||[],fechaHoy);})
+    .withFailureHandler(function(){_imprimirActaHTML(datos,folio,[],fechaHoy);})
+    .obtenerActasPorEmpleado(datos.empleado);
+}
+
+function _imprimirActaHTML(datos,folio,historial,fechaHoy){
+  // Página 1 = Acta limpia | Página 2 = Historial actas ACTIVAS del empleado
+
+  var CSS='<style>'
+    +'*{box-sizing:border-box;margin:0;padding:0}'
+    +'body{font-family:Arial,sans-serif;font-size:11px;color:#0f172a;background:white}'
+    +'.page{padding:20px 24px;max-width:740px;margin:0 auto;page-break-after:always}'
+    +'.page:last-child{page-break-after:auto}'
+    +'.hdr{text-align:center;border-bottom:3px solid #1a237e;padding-bottom:11px;margin-bottom:14px}'
+    +'.hdr h2{font-size:14px;color:#1a237e;margin:3px 0;font-weight:700}'
+    +'.hdr p{font-size:9.5px;color:#64748b;margin:1px 0}'
+    +'.fbadge{background:#dc2626;color:white;padding:3px 11px;border-radius:20px;font-size:11px;font-weight:700;display:inline-block;margin-top:5px}'
+    +'.sec{margin-bottom:11px}'
+    +'.sec h4{font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:.07em;color:#1a237e;border-bottom:1.5px solid #dde;padding-bottom:3px;margin-bottom:7px}'
+    +'.g2{display:grid;grid-template-columns:1fr 1fr;gap:8px}'
+    +'.campo label{font-size:8.5px;font-weight:700;color:#94a3b8;text-transform:uppercase;display:block;margin-bottom:1px}'
+    +'.campo p{font-size:10.5px;border-bottom:1px solid #e2e8f0;padding-bottom:2px;min-height:15px}'
+    +'.tl{font-size:10.5px;border:1px solid #e2e8f0;border-radius:4px;padding:7px;min-height:44px;background:#f8fafc;line-height:1.5}'
+    +'.aviso{border:1px solid #e2e8f0;border-radius:5px;padding:7px 9px;margin:9px 0;font-size:9px;color:#64748b;background:#f8fafc;line-height:1.4}'
+    +'.firmas{display:grid;grid-template-columns:1fr 1fr 1fr;gap:16px;margin-top:20px}'
+    +'.fb{text-align:center}'
+    +'.fl{border-bottom:1px solid #333;margin-bottom:3px;height:30px}'
+    +'.fb p{font-size:8.5px;font-weight:700;color:#64748b}'
+    +'.pie{text-align:center;font-size:8px;color:#94a3b8;margin-top:12px}'
+    // Página 2
+    +'.hist-hdr{background:#1a237e;color:white;padding:12px 16px;border-radius:8px;margin-bottom:14px}'
+    +'.hist-hdr h3{font-size:13px;font-weight:700;margin-bottom:3px}'
+    +'.hist-hdr p{font-size:9.5px;opacity:.85}'
+    +'.card{border:1px solid #e2e8f0;border-radius:7px;margin-bottom:10px;overflow:hidden}'
+    +'.card-top{background:#f1f5f9;padding:7px 11px;display:flex;justify-content:space-between;align-items:center}'
+    +'.card-top .folio{font-weight:700;color:#1a237e;font-size:11px}'
+    +'.card-top .fecha{font-size:9.5px;color:#64748b}'
+    +'.tag{display:inline-block;padding:2px 8px;border-radius:10px;font-size:9px;font-weight:700}'
+    +'.tag-rojo{background:#dc2626;color:white}'
+    +'.tag-verde{background:#16a34a;color:white}'
+    +'.card-body{padding:7px 11px}'
+    +'.tipo{font-size:10.5px;font-weight:700;margin-bottom:3px}'
+    +'.desc{font-size:10px;color:#475569;line-height:1.4}'
+    +'@media print{body{padding:0}.page{margin:0;padding:0;max-width:100%}}'
+    +'@page{size:letter portrait;margin:15mm 18mm}'
+    +'</style>';
+
+  // ── Pág 1: Acta ────────────────────────────────────────────────────
+  var p1='<div class="page">'
+    +'<div class="hdr">'
+    +'<img src="https://www.toolcn.mx/cdn/shop/files/logo_ToolCN_shopify.png?v=1751677238"'
+    +' style="height:34px;margin-bottom:3px" onerror="this.style.display=\'none\'">'
+    +'<h2>ACTA ADMINISTRATIVA</h2>'
+    +'<p>TOOL CN — Recursos Humanos</p>'
+    +'<span class="fbadge">'+folio+'</span>'
+    +'<p style="margin-top:5px;font-size:9.5px">Fecha: <strong>'+_fmtFecha(datos.fecha||fechaHoy)+'</strong></p>'
+    +'</div>'
+    +'<div class="sec"><h4>👤 Datos del Empleado</h4><div class="g2">'
+    +'<div class="campo"><label>Nombre completo</label><p>'+datos.empleado+'</p></div>'
+    +'<div class="campo"><label>Núm. Empleado</label><p>'+(datos.numEmpleado||'—')+'</p></div>'
+    +'<div class="campo"><label>Departamento / Área</label><p>'+(datos.departamento||'—')+'</p></div>'
+    +'<div class="campo"><label>Puesto</label><p>'+(datos.puesto||'—')+'</p></div>'
+    +'</div></div>'
+    +'<div class="sec"><h4>⚠️ Descripción de la Falta</h4>'
+    +'<div class="g2" style="margin-bottom:7px">'
+    +'<div class="campo"><label>Tipo de falta</label><p>'+datos.tipoFalta+'</p></div>'
+    +'<div class="campo"><label>Artículo</label><p>'+(datos.articulo||'—')+'</p></div>'
+    +'</div>'
+    +'<div class="campo"><label>Descripción detallada</label>'
+    +'<div class="tl">'+datos.descripcion+'</div></div></div>'
+    +'<div class="sec"><h4>⚖️ Sanción Aplicada</h4><div class="g2">'
+    +'<div class="campo"><label>Sanción</label><p>'+datos.sancion+'</p></div>'
+    +'<div class="campo"><label>Autorizado por</label><p>'+(datos.autorizadoPor||'—')+'</p></div>'
+    +'</div></div>'
+    +'<div class="sec"><h4>👥 Testigos</h4><div class="g2">'
+    +'<div class="campo"><label>Testigo 1</label><p>'+(datos.testigo1||'—')+'</p></div>'
+    +'<div class="campo"><label>Testigo 2</label><p>'+(datos.testigo2||'—')+'</p></div>'
+    +'</div></div>'
+    +(datos.observaciones?'<div class="sec"><h4>📝 Observaciones</h4><div class="tl">'+datos.observaciones+'</div></div>':'')
+    +'<div class="aviso">El trabajador(a) fue notificado(a) de los hechos y sanción en la fecha indicada. '
+    +'La firma es constancia de notificación, no implica aceptación. '
+    +'En caso de negativa a firmar se hace constar mediante testigos.</div>'
+    +'<div class="firmas">'
+    +'<div class="fb"><div class="fl"></div><p>FIRMA DEL EMPLEADO<br>'+datos.empleado+'</p></div>'
+    +'<div class="fb"><div class="fl"></div><p>SUPERVISOR / RESPONSABLE<br>'+(datos.autorizadoPor||'___________')+'</p></div>'
+    +'<div class="fb"><div class="fl"></div><p>RECURSOS HUMANOS</p></div>'
+    +'</div>'
+    +'<p class="pie">Generado el '+fechaHoy+' — TOOL CN Sistema RH &nbsp;|&nbsp; '+folio+'</p>'
+    +'</div>';
+
+  // ── Pág 2: Historial ACTIVAS, más reciente primero ─────────────────
+  // Incluir el acta actual si su estatus es ACTIVA
+  var todasActivas = historial.filter(function(a){
+    return (a.estatus||'').toUpperCase()==='ACTIVA';
+  });
+  // Si el acta actual no está en el historial, agregarla
+  var yaEsta = todasActivas.some(function(a){ return a.folio===folio; });
+  if(!yaEsta){
+    todasActivas.push({
+      folio:folio, fecha:datos.fecha||fechaHoy,
+      tipoFalta:datos.tipoFalta, sancion:datos.sancion,
+      descripcion:datos.descripcion, estatus:'ACTIVA'
+    });
+  }
+  // Ordenar descendente (más reciente primero) por folio
+  todasActivas.sort(function(a,b){ return b.folio.localeCompare(a.folio); });
+
+  var p2='<div class="page">'
+    +'<div class="hist-hdr">'
+    +'<h3>📋 Historial de Actas Administrativas</h3>'
+    +'<p>Empleado: <strong>'+datos.empleado+'</strong>'
+    +(datos.numEmpleado?' &nbsp;|&nbsp; Núm: <strong>'+datos.numEmpleado+'</strong>':'')
+    +(datos.departamento?' &nbsp;|&nbsp; Área: <strong>'+datos.departamento+'</strong>':'')+'</p>'
+    +'<p>Actas activas: <strong>'+todasActivas.length+'</strong> &nbsp;|&nbsp; Impreso: '+fechaHoy+'</p>'
+    +'</div>';
+
+  if(todasActivas.length===0){
+    p2+='<div style="text-align:center;padding:36px;color:#64748b">'
+      +'<p>Sin actas activas registradas para este empleado.</p></div>';
+  } else {
+    p2+=todasActivas.map(function(a,idx){
+      var esActual=(a.folio===folio);
+      return '<div class="card">'
+        +'<div class="card-top">'
+        +'<div>'
+        +'<span class="folio">'+a.folio+'</span>'
+        +(esActual?' <span class="tag tag-verde">ACTUAL</span>':'')
+        +'</div>'
+        +'<div style="display:flex;gap:8px;align-items:center">'
+        +'<span class="fecha">'+_fmtFecha(a.fecha)+'</span>'
+        +'<span class="tag tag-rojo">'+a.sancion+'</span>'
+        +'</div></div>'
+        +'<div class="card-body">'
+        +'<div class="tipo">'+a.tipoFalta+'</div>'
+        +(a.descripcion?'<div class="desc">'+a.descripcion+'</div>':'')
+        +'</div></div>';
+    }).join('');
+  }
+  p2+='<p class="pie" style="margin-top:14px">TOOL CN Sistema RH — Historial generado el '+fechaHoy+'</p></div>';
+
+  var fullHTML='<!DOCTYPE html><html lang="es"><head><meta charset="UTF-8"><title>Acta '+folio+'</title>'+CSS+'</head><body>'+p1+p2+'</body></html>';
+  var v=window.open('','_blank','width=816,height=1056');
+  v.document.write(fullHTML);
+  v.document.close();
+  setTimeout(function(){v.print();},500);
+}
+
+// ──────────────────────────────────────────────────────────────────────
+//  CONSULTA DE ACTAS
+// ──────────────────────────────────────────────────────────────────────

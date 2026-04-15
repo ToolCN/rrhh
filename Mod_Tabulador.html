@@ -1,0 +1,479 @@
+function loadTabulador(){
+  _tab_catActiva = 0;
+  showLoader('Cargando tabulador...');
+  google.script.run
+    .withSuccessHandler(function(res){
+      hideLoader();
+      _tab_datos = res;
+      _tabRender();
+    })
+    .withFailureHandler(function(e){
+      hideLoader();
+      Swal.fire('Error',''+e,'error');
+    })
+    .obtenerTabulador();
+}
+
+function _tabRender(){
+  var ca = document.getElementById('content-area');
+  if(!_tab_datos || !_tab_datos.categorias || !_tab_datos.categorias.length){
+    ca.innerHTML =
+      '<div class="card-pro" style="text-align:center;padding:48px">'
+      +'<p class="text-muted">No se encontraron datos en el Tabulador.</p></div>';
+    return;
+  }
+
+  // ── Botones de categoría ──────────────────────────────────────────
+  var btns = '';
+  _tab_datos.categorias.forEach(function(cat, i){
+    var act = (i === _tab_catActiva);
+    btns += '<button class="tab-cat-btn" data-cat="'+i+'" style="'
+      +'background:'+(act?'#7B1034':'#f1f5f9')+';'
+      +'color:'+(act?'#fff':'#334155')+';'
+      +'border:2px solid '+(act?'#7B1034':'#e2e8f0')+';'
+      +'border-radius:20px;padding:6px 18px;margin:4px;'
+      +'font-size:.82rem;font-weight:600;cursor:pointer;'
+      +'transition:background .2s,color .2s,border-color .2s">'
+      +cat+'</button>';
+  });
+
+  var escalones = (_tab_datos.datos[_tab_catActiva]||{}).escalones||[];
+  var catNombre = _tab_datos.categorias[_tab_catActiva]||'';
+
+  ca.innerHTML =
+    // animación bounce
+    '<style>@keyframes tab-bounce{0%,100%{transform:translateY(0)}50%{transform:translateY(-10px)}}</style>'
+    +'<div class="card-pro" style="padding:20px 24px">'
+    // ── Encabezado: logo + título + botón imprimir ──
+    +'<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:20px;flex-wrap:wrap;gap:10px">'
+    +'<div style="display:flex;align-items:center;gap:14px">'
+    +'<img src="https://www.toolcn.mx/cdn/shop/files/logo_ToolCN_shopify.png?v=1751677238" style="height:52px;object-fit:contain">'
+    +'<div>'
+    +'<div style="font-size:.65rem;color:#94a3b8;font-weight:700;text-transform:uppercase;letter-spacing:.08em">Recursos Humanos</div>'
+    +'<div style="font-size:1.25rem;font-weight:900;color:#0f172a;line-height:1.2">TABULADOR DE SALARIOS</div>'
+    +'</div>'
+    +'</div>'
+    +'<div style="display:flex;gap:8px">'
+    +'<button id="tab-btn-actualizar" style="background:#0369a1;color:white;border:none;border-radius:10px;padding:9px 18px;font-size:.85rem;font-weight:700;cursor:pointer;display:flex;align-items:center;gap:7px;box-shadow:0 2px 8px rgba(3,105,161,.3)">'
+    +'✏️ Actualizar Tabulador</button>'
+    +'<button id="tab-btn-imprimir" style="background:#7B1034;color:white;border:none;border-radius:10px;padding:9px 18px;font-size:.85rem;font-weight:700;cursor:pointer;display:flex;align-items:center;gap:7px;box-shadow:0 2px 8px rgba(123,16,52,.3)">'
+    +'🖨️ Imprimir</button>'
+    +'</div>'
+    +'</div>'
+    // ── Botones categoría ──
+    +'<div id="tab-cat-bar" style="display:flex;flex-wrap:wrap;gap:4px;margin-bottom:24px">'+btns+'</div>'
+    // ── Escalera ──
+    +'<div id="tab-escalera-wrap">'+_tabEscaleraHtml(escalones, catNombre)+'</div>'
+    +'</div>';
+
+  // ── Event delegation ────────────────────────────────────────────
+  if(!ca._tabBound){
+    ca._tabBound = true;
+    ca.addEventListener('click', function(e){
+      // Botón actualizar tabulador
+      if(e.target.closest('#tab-btn-actualizar')){ tab_abrirEditor(); return; }
+      // Botón imprimir
+      if(e.target.closest('#tab-btn-imprimir')){ tab_imprimir(); return; }
+
+      // Botón categoría
+      var btn = e.target.closest('.tab-cat-btn');
+      if(!btn) return;
+      _tab_catActiva = parseInt(btn.getAttribute('data-cat'), 10);
+      ca.querySelectorAll('.tab-cat-btn').forEach(function(b){
+        var act = parseInt(b.getAttribute('data-cat'),10) === _tab_catActiva;
+        b.style.background  = act ? '#7B1034' : '#f1f5f9';
+        b.style.color       = act ? '#fff'    : '#334155';
+        b.style.borderColor = act ? '#7B1034' : '#e2e8f0';
+      });
+      var esc  = (_tab_datos.datos[_tab_catActiva]||{}).escalones||[];
+      var nom  = _tab_datos.categorias[_tab_catActiva]||'';
+      document.getElementById('tab-escalera-wrap').innerHTML = _tabEscaleraHtml(esc, nom);
+    });
+  }
+}
+
+function _tabEscaleraHtml(escalones, catNombre){
+  if(!escalones || !escalones.length){
+    return '<p class="text-muted" style="text-align:center;padding:40px">Sin escalones para esta categoría.</p>';
+  }
+
+  var N      = escalones.length;
+  var STEP_W = 180;   // desplazamiento horizontal por escalón (px)
+  var STEP_H = 72;    // altura del bloque de cada escalón (px)
+
+  // Paleta café oscuro (escalón 1, base) → claro (escalón N, tope)
+  var palette = [
+    '#4A2C0A','#5C3A1E','#6B4423','#7A4F29','#8B5A2B',
+    '#9C6530','#A87040','#B47D50','#BE8B60','#C89870'
+  ];
+
+  var MONITO_W = 64;
+  // El escalón 1 (índice 0) en flex-column-reverse queda visualmente
+  // en la posición más a la derecha: desplazamiento = (N-1)*STEP_W
+  // El monito se centra horizontalmente sobre ese escalón
+  // Escalón 1 (i=0) tiene margin-left:0, está abajo-izquierda.
+  // El monito se centra sobre ese bloque: left = STEP_W/2 - MONITO_W/2
+  var moniLeft = Math.round(STEP_W / 2) - Math.round(MONITO_W / 2);
+
+  var stepsHtml = '';
+  escalones.forEach(function(esc, i){
+    var color     = palette[Math.min(i, palette.length - 1)];
+    var mLeft     = i * STEP_W;
+    var baseNames = esc.base.map(function(b){ return b.nombre; }).join(' / ');
+    var salario   = esc.base.length ? esc.base[0].salario : '';
+
+    // Chips de puestos plus
+    var plusChips = '';
+    if(esc.plus && esc.plus.length){
+      var arrow = '<span style="color:#7B1034;font-size:1rem;margin-right:6px">&#8594;</span>';
+      plusChips = '<div style="display:flex;align-items:center;flex-wrap:wrap;gap:5px;padding:0 10px">'
+        +arrow;
+      esc.plus.forEach(function(p){
+        plusChips +=
+          '<div style="background:white;border:2px solid #7B1034;border-radius:12px;'
+          +'padding:3px 11px;font-size:.72rem;line-height:1.4;white-space:nowrap">'
+          +'<span style="font-weight:700;color:#0f172a">'+p.nombre+'</span>'
+          +'<span style="color:#7B1034;font-weight:900;margin-left:6px">'+p.salario+'</span>'
+          +'</div>';
+      });
+      plusChips += '</div>';
+    }
+
+    stepsHtml +=
+      '<div style="display:flex;align-items:center;margin-left:'+mLeft+'px;margin-bottom:3px">'
+      // Bloque escalón (color)
+      +'<div style="background:'+color+';min-height:'+STEP_H+'px;min-width:'+STEP_W+'px;'
+      +'border-radius:8px 8px 0 0;padding:8px 14px;display:flex;align-items:center;gap:10px;'
+      +'box-shadow:0 3px 8px rgba(0,0,0,.22);flex-shrink:0">'
+      // Badge número
+      +'<div style="flex-shrink:0;width:30px;height:30px;border-radius:50%;'
+      +'background:rgba(0,0,0,.25);display:flex;align-items:center;justify-content:center;'
+      +'font-size:.75rem;font-weight:900;color:#fff">'+(i+1)+'</div>'
+      // Texto base
+      +'<div style="min-width:0">'
+      +'<div style="font-size:.76rem;font-weight:700;color:rgba(255,255,255,.88);'
+      +'white-space:normal;word-break:break-word;line-height:1.25;max-width:'+(STEP_W-60)+'px">'+baseNames+'</div>'
+      +'<div style="font-size:.92rem;font-weight:900;color:#fff;letter-spacing:.4px;margin-top:2px">'+salario+'</div>'
+      +'</div>'
+      +'</div>'
+      // Plus chips a la derecha
+      +plusChips
+      +'</div>';
+  });
+
+  // Contenedor con monito sobre escalón 1 (más a la derecha en column-reverse)
+  var totalW = N * STEP_W + 420; // espacio extra para plus chips
+
+  // El escalón 1 (índice 0) con flex-column-reverse queda visualmente
+  // en la posición (N-1)*STEP_W desde la izquierda. Centramos el monito ahí.
+  // Escalón 1 (i=0) tiene margin-left:0, está abajo-izquierda.
+  // El monito se centra sobre ese bloque: left = STEP_W/2 - MONITO_W/2
+  var moniLeft = Math.round(STEP_W / 2) - Math.round(MONITO_W / 2);
+
+  return '<div style="overflow-x:auto;padding-bottom:16px">'
+    +'<div style="position:relative;padding-top:90px;min-width:'+totalW+'px">'
+    +'<img src="https://media.licdn.com/dms/image/v2/D4E05AQFY6Jdpb5aQ2Q/videocover-high/B4EZlO0BzqIUB8-/0/1757963888527?e=2147483647&v=beta&t=NlqR1mtmHwJFGLGhUiW0vxCcvhwqw-pqQtHhOr5QqDQ"'
+    +' style="position:absolute;bottom:'+(STEP_H)+'px;left:'+moniLeft+'px;width:'+MONITO_W+'px;'
+    +'animation:tab-bounce 1.2s ease-in-out infinite;pointer-events:none;z-index:10" '
+    +'alt="escalando">'
+    +'<div style="display:flex;flex-direction:column-reverse;align-items:flex-start">'
+    +stepsHtml
+    +'</div>'
+    +'</div>'
+    +'<div style="text-align:center;margin-top:12px;font-size:.75rem;color:#94a3b8">'
+    +'<i class="fas fa-arrow-left me-1"></i>Escalón 1 — base'
+    +'&nbsp;&nbsp;&nbsp;'+(catNombre ? catNombre+' &nbsp;—&nbsp; ' : '')
+    +'Escalón '+N+' — tope<i class="fas fa-arrow-right ms-1"></i>'
+    +'</div>'
+    +'</div>';
+}
+
+function tab_abrirEditor(){
+  showLoader('Cargando datos del tabulador...');
+  google.script.run
+    .withSuccessHandler(function(filas){
+      hideLoader();
+      if(!filas || !filas.length){
+        Swal.fire('Sin datos','No se encontraron filas en el Tabulador.','info');
+        return;
+      }
+      // Construir tabla editable
+      var filasPeso = '$'.charCodeAt(0); // solo para no repetir
+      var html = '<div style="max-height:420px;overflow-y:auto">'
+        +'<table class="table table-sm align-middle" style="font-size:.82rem">'
+        +'<thead style="position:sticky;top:0;z-index:1"><tr>'
+        +'<th style="background:#0f172a;color:white;padding:8px 10px;min-width:50px">#</th>'
+        +'<th style="background:#0f172a;color:white;padding:8px 10px;min-width:110px">DIARIO</th>'
+        +'<th style="background:#0f172a;color:white;padding:8px 10px;min-width:110px">DIA INT.</th>'
+        +'<th style="background:#0f172a;color:white;padding:8px 10px;min-width:110px">SEMANAL</th>'
+        +'</tr></thead><tbody id="tab-editor-tbody">';
+      filas.forEach(function(f, i){
+        html += '<tr>'
+          +'<td style="color:#94a3b8;font-weight:700;text-align:center">'+(i+1)+'</td>'
+          +'<td><div style="display:flex;align-items:center;gap:4px">'
+          +'<span style="color:#64748b;font-size:.8rem">$</span>'
+          +'<input type="number" step="0.01" min="0" class="form-control form-control-sm tab-ed-diario" '
+          +'data-row="'+f.rowNum+'" data-idx="'+i+'" '
+          +'style="font-size:.82rem;padding:4px 6px" value="'+f.diario.toFixed(2)+'">'
+          +'</div></td>'
+          +'<td><div style="display:flex;align-items:center;gap:4px">'
+          +'<span style="color:#64748b;font-size:.8rem">$</span>'
+          +'<input type="number" step="0.01" min="0" class="form-control form-control-sm tab-ed-diaint" '
+          +'data-row="'+f.rowNum+'" data-idx="'+i+'" '
+          +'style="font-size:.82rem;padding:4px 6px" value="'+f.diaInt.toFixed(2)+'">'
+          +'</div></td>'
+          +'<td><div style="display:flex;align-items:center;gap:4px">'
+          +'<span style="color:#64748b;font-size:.8rem">$</span>'
+          +'<input type="number" step="0.01" min="0" class="form-control form-control-sm tab-ed-semanal" '
+          +'data-row="'+f.rowNum+'" data-idx="'+i+'" '
+          +'style="font-size:.82rem;padding:4px 6px" value="'+f.semanal.toFixed(2)+'">'
+          +'</div></td>'
+          +'</tr>';
+      });
+      html += '</tbody></table></div>';
+
+      Swal.fire({
+        title:'Actualizar Tabulador',
+        html: html,
+        width: '560px',
+        showCancelButton: true,
+        confirmButtonText: '<i class="fas fa-save me-1"></i>Guardar cambios',
+        cancelButtonText: 'Cancelar',
+        confirmButtonColor: '#0369a1',
+        preConfirm: function(){
+          var filasEdit = [];
+          var rows  = document.querySelectorAll('#tab-editor-tbody tr');
+          rows.forEach(function(tr){
+            var inpD  = tr.querySelector('.tab-ed-diario');
+            var inpDI = tr.querySelector('.tab-ed-diaint');
+            var inpS  = tr.querySelector('.tab-ed-semanal');
+            if(!inpD) return;
+            filasEdit.push({
+              rowNum:  Number(inpD.getAttribute('data-row')),
+              diario:  parseFloat(inpD.value)  || 0,
+              diaInt:  parseFloat(inpDI.value) || 0,
+              semanal: parseFloat(inpS.value)  || 0
+            });
+          });
+          if(!filasEdit.length){
+            Swal.showValidationMessage('No hay datos para guardar');
+            return false;
+          }
+          return filasEdit;
+        }
+      }).then(function(res){
+        if(!res.isConfirmed) return;
+        showLoader('Guardando tabulador...');
+        google.script.run
+          .withSuccessHandler(function(r){
+            hideLoader();
+            if(String(r).startsWith('OK')){
+              rhToast('success','✅ Tabulador actualizado');
+              setTimeout(function(){ loadTabulador(); }, 1200);
+            } else {
+              Swal.fire('Error', r, 'error');
+            }
+          })
+          .withFailureHandler(function(e){ hideLoader(); Swal.fire('Error',''+e,'error'); })
+          .actualizarFilasTabulador(res.value);
+      });
+    })
+    .withFailureHandler(function(e){ hideLoader(); Swal.fire('Error',''+e,'error'); })
+    .obtenerFilasTabulador();
+}
+
+function tab_imprimir(){
+  if(!_tab_datos || !_tab_datos.datos) return;
+  var catData   = _tab_datos.datos[_tab_catActiva] || {};
+  var catNom    = _tab_datos.categorias[_tab_catActiva] || 'Tabulador';
+  var escalones = catData.escalones || [];
+  var N = escalones.length;
+  if(!N) return;
+
+  var SW = 140;
+  var SH = 60;
+  var palette = [
+    '#4A2C0A','#5C3A1E','#6B4423','#7A4F29','#8B5A2B',
+    '#9C6530','#A87040','#B47D50','#BE8B60','#C89870'
+  ];
+
+  var stepsP = '';
+  escalones.forEach(function(esc, i){
+    var color     = palette[Math.min(i, palette.length - 1)];
+    var baseNames = esc.base.map(function(b){ return b.nombre; }).join(' / ');
+    var salario   = esc.base.length ? esc.base[0].salario : '';
+    var plusHtml  = '';
+    if(esc.plus && esc.plus.length){
+      plusHtml = '<div style="display:flex;align-items:center;flex-wrap:wrap;gap:4px;padding:0 6px">'
+        +'<span style="color:#7B1034;font-weight:900;font-size:10px">&#8594;</span>';
+      esc.plus.forEach(function(p){
+        plusHtml += '<span style="border:1.5px solid #7B1034;border-radius:10px;padding:2px 8px;'
+          +'font-size:8px;white-space:nowrap;-webkit-print-color-adjust:exact;print-color-adjust:exact">'
+          +'<b>'+p.nombre+'</b> <span style="color:#7B1034">'+p.salario+'</span></span>';
+      });
+      plusHtml += '</div>';
+    }
+    stepsP +=
+      '<div style="display:flex;align-items:center;margin-left:'+(i*SW)+'px;margin-bottom:2px">'
+      +'<div style="background:'+color+';height:'+SH+'px;min-width:'+SW+'px;'
+      +'border-radius:6px 6px 0 0;padding:0 10px;display:flex;align-items:center;gap:8px;flex-shrink:0;'
+      +'border:1.5px solid rgba(0,0,0,.25);'
+      +'-webkit-print-color-adjust:exact;print-color-adjust:exact">'
+      +'<div style="flex-shrink:0;width:22px;height:22px;border-radius:50%;'
+      +'background:rgba(0,0,0,.28);display:flex;align-items:center;justify-content:center;'
+      +'font-size:9px;font-weight:900;color:#fff;'
+      +'-webkit-print-color-adjust:exact;print-color-adjust:exact">'+(i+1)+'</div>'
+      +'<div>'
+      +'<div style="font-size:8px;font-weight:700;color:rgba(255,255,255,.95);'
+      +'white-space:nowrap;overflow:hidden;max-width:'+(SW-52)+'px">'+baseNames+'</div>'
+      +'<div style="font-size:11px;font-weight:900;color:#fff">'+salario+'</div>'
+      +'</div>'
+      +'</div>'
+      +plusHtml
+      +'</div>';
+  });
+
+  // Monito estático sobre escalón 1 (i=0, margin-left:0 = izquierda)
+  var MONITO_W_P = 48;
+  var moniLeftP  = Math.round(SW / 2) - Math.round(MONITO_W_P / 2);
+
+  // Ancho total de la escalera incluyendo plus chips
+  var totalPW = N * SW + 480;
+
+  // Área útil landscape letter a 96dpi ≈ 960px ancho
+  // Calculamos escala para que la escalera LLENE el espacio disponible
+  var areaAncho  = 920;
+  var escala     = Math.round((areaAncho / totalPW) * 100) / 100;
+  // Limitar: máximo 1.8 (no agrandar demasiado si hay pocos escalones)
+  escala = Math.min(1.8, Math.max(0.3, escala));
+
+  var alturaEscalera = N * SH + 80; // altura natural de la escalera
+
+  var escaleraP =
+    '<div style="position:relative;padding-top:60px;min-width:'+totalPW+'px;'
+    +'transform-origin:top left;transform:scale('+escala+');'
+    +'margin-bottom:'+(Math.round(alturaEscalera * escala) - alturaEscalera + 20)+'px">'
+    // Monito estático sobre escalón 1 (izquierda), anclado por bottom
+    +'<img src="https://media.licdn.com/dms/image/v2/D4E05AQFY6Jdpb5aQ2Q/videocover-high/B4EZlO0BzqIUB8-/0/1757963888527?e=2147483647&v=beta&t=NlqR1mtmHwJFGLGhUiW0vxCcvhwqw-pqQtHhOr5QqDQ"'
+    +' style="position:absolute;bottom:'+(SH)+'px;left:'+moniLeftP+'px;width:'+MONITO_W_P+'px;'
+    +'pointer-events:none;z-index:10" alt="escalando">'
+    +'<div style="display:flex;flex-direction:column-reverse;align-items:flex-start">'
+    +stepsP
+    +'</div>'
+    +'</div>';
+
+  // ── Print area ──
+  var printArea = document.getElementById('tab-print-area');
+  if(!printArea){
+    printArea = document.createElement('div');
+    printArea.id = 'tab-print-area';
+    printArea.style.display = 'none';
+    document.body.appendChild(printArea);
+  }
+  var oldSt = document.getElementById('tab-print-style');
+  if(oldSt) oldSt.parentNode.removeChild(oldSt);
+  var st = document.createElement('style');
+  st.id = 'tab-print-style';
+  st.innerHTML =
+    '@media print{'
+    +'body *{visibility:hidden}'
+    +'#tab-print-area,#tab-print-area *{visibility:visible}'
+    +'#tab-print-area{'
+    +'display:block!important;'
+    +'position:absolute;left:0;top:0;'
+    +'width:100%;'
+    +'padding:0;margin:0;'
+    +'box-sizing:border-box;'
+    +'background:white;'
+    +'-webkit-print-color-adjust:exact;'
+    +'print-color-adjust:exact'
+    +'}'
+    +'@page{size:letter portrait;margin:15mm 18mm}}';
+  document.head.appendChild(st);
+
+  var fecha = new Date().toLocaleDateString('es-MX',{year:'numeric',month:'long',day:'numeric'});
+
+  printArea.innerHTML =
+    '<div style="font-family:Arial,sans-serif;width:100%;padding:0 2mm;box-sizing:border-box">'
+    // ── Encabezado ──
+    +'<div style="display:flex;align-items:center;justify-content:space-between;'
+    +'border-bottom:3px solid #7B1034;padding-bottom:8px;margin-bottom:12px">'
+    +'<div style="display:flex;align-items:center;gap:12px">'
+    +'<img src="https://www.toolcn.mx/cdn/shop/files/logo_ToolCN_shopify.png?v=1751677238" '
+    +'style="height:40px;object-fit:contain">'
+    +'<div>'
+    +'<div style="font-size:8px;color:#64748b;font-weight:700;text-transform:uppercase;letter-spacing:.1em">Recursos Humanos</div>'
+    +'<div style="font-size:19px;font-weight:900;color:#0f172a;line-height:1.1">TABULADOR DE SALARIOS</div>'
+    +'<div style="font-size:11px;font-weight:700;color:#7B1034">'+catNom+'</div>'
+    +'</div>'
+    +'</div>'
+    +'<div style="text-align:right;font-size:8px;color:#94a3b8">'
+    +'<div style="font-weight:700;color:#475569">Fecha de impresión</div>'
+    +'<div>'+fecha+'</div>'
+    +'</div>'
+    +'</div>'
+    // ── Escalera escalada ──
+    +escaleraP
+    // ── Pie de página ──
+    +'<div style="border-top:1px solid #e2e8f0;padding-top:5px;'
+    +'display:flex;justify-content:space-between;align-items:center">'
+    +'<div style="font-size:7px;color:#94a3b8">Sistema de Recursos Humanos — Documento oficial</div>'
+    +'<div style="font-size:7px;color:#94a3b8">Escalón 1 = Base &nbsp;|&nbsp; Escalón '+N+' = Tope</div>'
+    +'</div>'
+    +'</div>';
+
+  printArea.style.display = 'block';
+  setTimeout(function(){ window.print(); }, 700);
+  setTimeout(function(){ printArea.style.display = 'none'; }, 6000);
+}
+
+// ══════════════════════════════════════════════════════════════════════
+//  MÓDULO: CAPACITACIÓN (pendiente)
+// ══════════════════════════════════════════════════════════════════════
+// ══════════════════════════════════════════════════════════════════════
+//  MÓDULO: CAPACITACIÓN — Matriz de Habilidades
+// ══════════════════════════════════════════════════════════════════════
+var _cap_datos      = null;
+var _cap_areaActiva = 0;
+
+// Descripciones fijas de cada categoría
+var CAP_DESC = {
+  SEG: { label:'Seguridad en el trabajo',       desc:'Uso adecuado del equipo de protección personal y aplicación de las normas de seguridad de la empresa.' },
+  CAL: { label:'Calidad del producto',           desc:'Aseguramiento de que los productos manufacturados cumplan con las especificaciones que se manejan.' },
+  PRO: { label:'Conocimiento del proceso',       desc:'Entender cómo funciona el proceso, incluyendo el uso de herramientas para transformar el material.' },
+  MAT: { label:'Control de materiales',          desc:'Entender el tipo de material usado para cada producto, en calidad de acero y diámetros requeridos.' },
+  LUB: { label:'Manejo de la lubricación',       desc:'Dominar los puntos de lubricación y tipos de lubricantes usados para reducir fricción y proteger contra desgastes.' },
+  OPE: { label:'Operación de equipos',           desc:'Habilidad para trabajar los equipos de producción y manejar la secuencia de operaciones.' },
+  HER: { label:'Diseño de herramental',          desc:'Capacidad para interpretar el diseño del herramental, asegurando el flujo adecuado y la geometría final.' },
+  OPT: { label:'Optimización del proceso',       desc:'Identificar oportunidades para mejorar la eficiencia, la precisión y la calidad de los productos de los procesos.' },
+  COD: { label:'Código de conducta',             desc:'Actitud de trabajador acorde al reglamento interior de trabajo.' }
+};
+
+// Niveles con sus círculos SVG y etiquetas
+var CAP_NIVELES = [
+  { val:0,
+    svg:'<circle cx="12" cy="12" r="10" fill="white" stroke="#475569" stroke-width="2"/>',
+    label:'Sin capacitación' },
+  { val:25,
+    svg:'<circle cx="12" cy="12" r="10" fill="white" stroke="#475569" stroke-width="2"/>'
+       +'<path d="M12,12 L12,2 A10,10 0 0,1 22,12 Z" fill="#475569"/>',
+    label:'I — Iniciado' },
+  { val:50,
+    svg:'<circle cx="12" cy="12" r="10" fill="white" stroke="#475569" stroke-width="2"/>'
+       +'<path d="M12,12 L12,2 A10,10 0 0,1 12,22 Z" fill="#475569"/>',
+    label:'L — Limitado' },
+  { val:75,
+    svg:'<circle cx="12" cy="12" r="10" fill="#475569" stroke="#475569" stroke-width="2"/>'
+       +'<path d="M12,12 L12,2 A10,10 0 0,0 2,12 Z" fill="white"/>',
+    label:'U — Utilizable' },
+  { val:100,
+    svg:'<circle cx="12" cy="12" r="10" fill="#475569" stroke="#475569" stroke-width="2"/>',
+    label:'O — Operativo' }
+];
+
+function _capSvg(val){
+  var found = null;
+  for(var i=0;i<CAP_NIVELES.length;i++){ if(CAP_NIVELES[i].val===val){ found=CAP_NIVELES[i]; break; } }
+  var n = found || CAP_NIVELES[0];
+  return '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="28" height="28">'+n.svg+'</svg>';
+}

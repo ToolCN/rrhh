@@ -1,0 +1,10 @@
+rebuild_main.js
+extract_modules.js
+rebuild_setup.js
+package.json
+package-lock.json
+*.md
+*.py
+*.sh
+node_modules/
+!appsscript.json

@@ -1,0 +1,162 @@
+function loadConsultaRetardos(){
+  var m=inc_mes, a=inc_anio;
+  showLoader('Cargando retardos de '+MESES_NOMBRES[m]+' '+a+'...');
+  google.script.run
+    .withSuccessHandler(function(lista){hideLoader();renderTablaRetardos(lista||[]);})
+    .withFailureHandler(function(e){hideLoader();Swal.fire('Error',''+e,'error');})
+    .obtenerRetardos({mes:m, anio:a});
+}
+
+function renderTablaRetardos(lista){
+  var total=lista.length;
+  var just=lista.filter(function(r){return (r.justificado||'').toUpperCase()==='SI';}).length;
+  var totalMin=lista.reduce(function(s,r){return s+Number(r.minutosRetardo||0);},0);
+
+  document.getElementById('content-area').innerHTML=
+    '<div class="card-pro mb-3">'
+    +'<div class="d-flex justify-content-between align-items-center mb-4">'
+    +'<div class="d-flex align-items-center gap-3">'
+    +'<div style="width:48px;height:48px;border-radius:12px;background:#ea580c20;display:flex;align-items:center;justify-content:center">'
+    +'<i class="fas fa-clock" style="color:#ea580c;font-size:1.4rem"></i></div>'
+    +'<div><h5 class="fw-bold m-0">Registros de Retardos</h5>'
+    +'<p class="text-muted small m-0">Historial de llegadas tardías</p></div></div>'
+    +'<div class="d-flex align-items-center gap-2">'
+    +_incNavMes('RETARDOS')
+    +'<button class="btn fw-bold rounded-pill px-4" style="background:#ea580c;color:white" onclick="loadRetardos()">'
+    +'<i class="fas fa-plus me-2"></i>Nuevo Registro</button>'
+    +'</div></div>'
+    +'<div class="row g-3 mb-4">'
+    +_incStat('Total Retardos',total,'#ea580c','fa-clock')
+    +_incStat('Justificados',just,'#16a34a','fa-check-circle')
+    +_incStat('Minutos acumulados',totalMin,'#7c3aed','fa-hourglass-half')
+    +'</div>'
+    +'<div class="row g-2 mb-3">'
+    +'<div class="col-md-5"><input id="ret-fi-emp" class="form-control form-control-sm" placeholder="🔍 Buscar empleado..." oninput="_retFiltrar()"></div>'
+    +'<div class="col-md-3"><select id="ret-fi-just" class="form-select form-select-sm" onchange="_retFiltrar()">'
+    +'<option value="">Todos</option><option value="SI">Justificados</option><option value="NO">No justificados</option></select></div>'
+    +'</div>'
+    +'<div class="table-responsive"><table class="table table-hover align-middle">'
+    +'<thead class="table-light"><tr><th>Folio</th><th>Fecha</th><th>Empleado</th><th>Área</th><th>Turno</th><th>H. Prog.</th><th>H. Real</th><th>Min.</th><th>Just.</th><th></th></tr></thead>'
+    +'<tbody id="tbody-ret">'
+    +(lista.length===0?'<tr><td colspan="10" class="text-center text-muted py-5">Sin registros</td></tr>'
+      :(_rhSet('ret',lista),lista.map(function(r,i){return _rowRet(r,i);}).join('')))
+    +'</tbody></table></div></div>';
+  window._retCache=lista;
+  setTimeout(_retBindEvents,0);
+}
+
+function _rowRet(r, idx){
+  var just=(r.justificado||'NO').toUpperCase()==='SI';
+  var badge=just
+    ?'<span class="badge" style="background:#dcfce7;color:#16a34a">Sí</span>'
+    :'<span class="badge" style="background:#fee2e2;color:#dc2626">No</span>';
+  var min=Number(r.minutosRetardo||0);
+  var minColor=min>=30?'#dc2626':min>=15?'#ea580c':'#64748b';
+  return '<tr data-emp="'+(r.empleado||'').toUpperCase()+'" data-just="'+(r.justificado||'NO').toUpperCase()+'">'
+    +'<td><span class="fw-bold" style="color:#ea580c;font-size:.8rem">'+r.folio+'</span></td>'
+    +'<td class="small">'+_incFmt(r.fecha)+'</td>'
+    +'<td class="fw-bold small">'+r.empleado+'</td>'
+    +'<td class="small text-muted">'+(r.departamento||'—')+'</td>'
+    +'<td class="small">'+(r.turno||'—')+'</td>'
+    +'<td class="small">'+(r.horaProgramada||'—')+'</td>'
+    +'<td class="small">'+(r.horaReal||'—')+'</td>'
+    +'<td><span class="fw-bold" style="color:'+minColor+'">'+min+'</span></td>'
+    +'<td>'+badge+'</td>'
+    +'<td><div class="d-flex gap-1">'
+    +'<button class="btn btn-sm btn-outline-warning rounded-pill" style="font-size:.7rem" data-accion="ret-editar" data-idx="'+idx+'"><i class="fas fa-edit me-1"></i>Editar</button>'
+    +'<button class="btn btn-sm btn-outline-danger rounded-pill" style="font-size:.7rem" data-accion="ret-eliminar" data-folio="'+r.folio+'"><i class="fas fa-trash me-1"></i>Eliminar</button>'
+    +'</div></td></tr>';
+}
+
+function _retFiltrar(){
+  var emp =(document.getElementById('ret-fi-emp').value||'').toUpperCase().trim();
+  var just=(document.getElementById('ret-fi-just').value||'').toUpperCase().trim();
+  document.querySelectorAll('#tbody-ret tr').forEach(function(tr){
+    var v=(!emp||tr.dataset.emp.includes(emp))&&(!just||tr.dataset.just===just);
+    tr.style.display=v?'':'none';
+  });
+}
+
+function _retBindEvents(){
+  var area=document.getElementById('content-area');
+  if(!area) return;
+  if(area._retHandler) area.removeEventListener('click',area._retHandler);
+  area._retHandler=function(ev){
+    var btn=ev.target.closest('[data-accion]');
+    if(!btn) return;
+    var ac=btn.getAttribute('data-accion');
+    var folio=btn.getAttribute('data-folio')||'';
+    var idx=parseInt(btn.getAttribute('data-idx')||'0',10);
+    var r=_rhGet('ret',idx);
+    if(ac==='ret-editar') _retModalEditar(r);
+    else if(ac==='ret-eliminar') incEliminar(folio,'RETARDOS',loadConsultaRetardos);
+  };
+  area.addEventListener('click',area._retHandler);
+}
+function _retModalEditar(r){
+  if(!r) return;
+  var fechaInput='';
+  if(r.fecha && r.fecha.indexOf('/')>-1){var p=r.fecha.split('/');fechaInput=p[2]+'-'+p[1]+'-'+p[0];}
+  else fechaInput=r.fecha||'';
+  Swal.fire({
+    title:'Editar Retardo — '+r.folio,
+    width:'580px',
+    html:'<div class="text-start row g-2">'
+      +'<div class="col-12"><label class="form-label small fw-bold">Empleado</label>'
+      +'<input class="form-control form-control-sm" value="'+(r.empleado||'')+'" readonly style="background:#f8fafc"></div>'
+      +'<div class="col-md-6"><label class="form-label small fw-bold">Fecha</label>'
+      +'<input id="ret-ed-fecha" type="date" class="form-control form-control-sm" value="'+fechaInput+'"></div>'
+      +'<div class="col-md-6"><label class="form-label small fw-bold">Turno</label>'
+      +'<select id="ret-ed-turno" class="form-select form-select-sm">'
+      +'<option'+(r.turno==='MATUTINO'?' selected':'')+'>MATUTINO</option>'
+      +'<option'+(r.turno==='VESPERTINO'?' selected':'')+'>VESPERTINO</option>'
+      +'<option'+(r.turno==='NOCTURNO'?' selected':'')+'>NOCTURNO</option>'
+      +'</select></div>'
+      +'<div class="col-md-4"><label class="form-label small fw-bold">Hora programada</label>'
+      +'<input id="ret-ed-hprog" type="time" class="form-control form-control-sm" value="'+(r.horaProgramada||'')+'"></div>'
+      +'<div class="col-md-4"><label class="form-label small fw-bold">Hora real</label>'
+      +'<input id="ret-ed-hreal" type="time" class="form-control form-control-sm" value="'+(r.horaReal||'')+'"></div>'
+      +'<div class="col-md-4"><label class="form-label small fw-bold">Minutos retardo</label>'
+      +'<input id="ret-ed-min" type="number" min="0" class="form-control form-control-sm" value="'+(r.minutosRetardo||0)+'"></div>'
+      +'<div class="col-md-6"><label class="form-label small fw-bold">¿Justificado?</label>'
+      +'<select id="ret-ed-just" class="form-select form-select-sm">'
+      +'<option value="NO"'+(r.justificado==='NO'?' selected':'')+'>No</option>'
+      +'<option value="SI"'+(r.justificado==='SI'?' selected':'')+'>Sí</option>'
+      +'</select></div>'
+      +'<div class="col-12"><label class="form-label small fw-bold">Observaciones</label>'
+      +'<input id="ret-ed-obs" class="form-control form-control-sm" value="'+(r.observaciones||'')+'"></div>'
+      +'</div>',
+    showCancelButton:true,
+    confirmButtonText:'<i class="fas fa-save me-1"></i>Guardar',
+    cancelButtonText:'Cancelar',confirmButtonColor:'#ea580c',
+    preConfirm:function(){
+      var f=document.getElementById('ret-ed-fecha').value;
+      if(!f){Swal.showValidationMessage('La fecha es obligatoria');return false;}
+      var p=f.split('-');
+      return {
+        folio:        r.folio,
+        fecha:        p.length===3?p[2]+'/'+p[1]+'/'+p[0]:f,
+        turno:        document.getElementById('ret-ed-turno').value,
+        horaProgramada:document.getElementById('ret-ed-hprog').value,
+        horaReal:     document.getElementById('ret-ed-hreal').value,
+        minutosRetardo:document.getElementById('ret-ed-min').value,
+        justificado:  document.getElementById('ret-ed-just').value,
+        observaciones:document.getElementById('ret-ed-obs').value
+      };
+    }
+  }).then(function(res){
+    if(!res.isConfirmed) return;
+    toggleSaving(true,'Guardando...');
+    google.script.run
+      .withSuccessHandler(function(r){
+        toggleSaving(false);
+        if(r==='OK'){rhToast('success','✅ Registro actualizado');setTimeout(loadConsultaRetardos,1200);}
+        else Swal.fire('Error',r,'error');
+      })
+      .withFailureHandler(function(e){toggleSaving(false);Swal.fire('Error',''+e,'error');})
+      .editarRegistroIncidencia({hoja:'RETARDOS', campos:res.value});
+  });
+}
+// ══════════════════════════════════════════════════════════════════════
+//  3. PERMISOS DE EMPLEADOS
+// ══════════════════════════════════════════════════════════════════════

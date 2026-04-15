@@ -1,0 +1,306 @@
+function loadTiempoExtra(){
+  document.getElementById('content-area').innerHTML=
+    '<div class="card-pro mb-3">'
+    +'<div class="d-flex justify-content-between align-items-center mb-4">'
+    +'<div class="d-flex align-items-center gap-3">'
+    +'<div style="width:48px;height:48px;border-radius:12px;background:#16a34a20;display:flex;align-items:center;justify-content:center">'
+    +'<i class="fas fa-hourglass-half" style="color:#16a34a;font-size:1.4rem"></i></div>'
+    +'<div><h5 class="fw-bold m-0">Tiempo Extra</h5>'
+    +'<p class="text-muted small m-0">Carga masiva desde Excel y consulta</p></div></div></div>'
+
+    +'<ul class="nav nav-pills mb-4">'
+    +'<li class="nav-item"><button class="nav-link active" onclick="_teTab(\'upload\')" id="te-tab-upload">'
+    +'<i class="fas fa-upload me-2"></i>Cargar Excel</button></li>'
+    +'<li class="nav-item"><button class="nav-link" onclick="_teTab(\'consulta\')" id="te-tab-consulta">'
+    +'<i class="fas fa-table me-2"></i>Consulta y Edición</button></li>'
+    +'</ul>'
+
+    // ─── Upload ────────────────────────────────────────────────────
+    +'<div id="te-panel-upload">'
+    +'<div class="row g-3 justify-content-center">'
+    +'<div class="col-md-7">'
+    +'<div id="te-drop" style="border:2px dashed #16a34a;border-radius:12px;padding:36px;text-align:center;cursor:pointer;background:#f0fdf4"'
+    +' onclick="document.getElementById(\'te-file\').click()"'
+    +' ondragover="event.preventDefault();this.style.background=\'#dcfce7\'"'
+    +' ondragleave="this.style.background=\'#f0fdf4\'"'
+    +' ondrop="_teOnDrop(event)">'
+    +'<i class="fas fa-file-excel" style="font-size:2.5rem;color:#16a34a;margin-bottom:12px;display:block"></i>'
+    +'<p class="fw-bold mb-1" style="color:#16a34a">Arrastra tu Excel aquí</p>'
+    +'<p class="text-muted small mb-0">o haz clic para seleccionar</p>'
+    +'</div>'
+    +'<input type="file" id="te-file" accept=".xlsx,.xls,.csv" style="display:none" onchange="_teOnFile(event)">'
+    +'</div>'
+    +'<div class="col-md-5">'
+    +'<div class="card border-0" style="background:#f8fafc;border-radius:10px;padding:16px">'
+    +'<p class="fw-bold small mb-2" style="color:#16a34a"><i class="fas fa-info-circle me-1"></i>Columnas requeridas</p>'
+    +'<div style="font-size:.8rem;font-family:monospace;line-height:1.8;color:#475569">'
+    +'FECHA &nbsp;·&nbsp; SEMANA &nbsp;·&nbsp; MES<br>'
+    +'CLAVE &nbsp;·&nbsp; NOMBRE<br>'
+    +'SAL_DIA<br>'
+    +'HORAS_DOBLES &nbsp;·&nbsp; HORAS_TRIPLES'
+    +'</div>'
+    +'<p class="small text-muted mt-2 mb-0">AREA e IMPORTE se calculan automáticamente.</p>'
+    +'</div></div></div>'
+    +'<div id="te-preview" class="mt-4"></div>'
+    +'</div>'
+
+    // ─── Consulta ──────────────────────────────────────────────────
+    +'<div id="te-panel-consulta" style="display:none">'
+    +'<div class="row g-2 mb-3 align-items-end">'
+    +'<div class="col-md-3"><label class="form-label small fw-bold">Fecha inicio</label>'
+    +'<input id="te-fi" type="date" class="form-control form-control-sm" value="'+_nom30diasAtras()+'"></div>'
+    +'<div class="col-md-3"><label class="form-label small fw-bold">Fecha fin</label>'
+    +'<input id="te-ff" type="date" class="form-control form-control-sm" value="'+_nomHoy()+'"></div>'
+    +'<div class="col-md-2"><button class="btn btn-sm fw-bold w-100" style="background:#16a34a;color:white" onclick="_teConsultar()">'
+    +'<i class="fas fa-search me-1"></i>Consultar</button></div>'
+    +'<div class="col-md-2"><button class="btn btn-sm btn-outline-secondary w-100" id="te-btn-export" style="display:none" onclick="_teExportar()">'
+    +'<i class="fas fa-file-excel me-1"></i>Exportar</button></div>'
+    +'</div>'
+    +'<div id="te-tabla"></div>'
+    +'</div>'
+    +'</div>';
+}
+
+function _teTab(tab){
+  document.getElementById('te-panel-upload').style.display   =tab==='upload'  ?'':'none';
+  document.getElementById('te-panel-consulta').style.display =tab==='consulta'?'':'none';
+  document.getElementById('te-tab-upload').classList[tab==='upload'?'add':'remove']('active');
+  document.getElementById('te-tab-consulta').classList[tab==='consulta'?'add':'remove']('active');
+}
+
+function _teOnDrop(ev){ ev.preventDefault(); var f=ev.dataTransfer.files[0]; if(f) _teProcesarArchivo(f); }
+function _teOnFile(ev){ var f=ev.target.files[0]; if(f) _teProcesarArchivo(f); }
+
+function _teProcesarArchivo(file){
+  _nomCargarSheetJS(function(){
+    var reader=new FileReader();
+    reader.onload=function(e){
+      try {
+        var wb  =XLSX.read(e.target.result,{type:'array',cellDates:false});
+        var ws  =wb.Sheets[wb.SheetNames[0]];
+        var json=XLSX.utils.sheet_to_json(ws,{defval:'',raw:true});
+        var filas=json.map(function(row){
+          var r={};
+          Object.keys(row).forEach(function(k){ r[k.trim().toUpperCase()]=row[k]; });
+          return _nomSanitizarFila(r);
+        });
+        _teMostrarPreview(filas);
+      } catch(err){ Swal.fire('Error al leer archivo',''+err,'error'); }
+    };
+    reader.readAsArrayBuffer(file);
+  });
+}
+
+function _teMostrarPreview(filas){
+  var prevEl=document.getElementById('te-preview');
+  if(!prevEl) return;
+  if(!filas.length){
+    prevEl.innerHTML='<div class="alert alert-warning">Archivo vacío o formato incorrecto.</div>';
+    return;
+  }
+  var preview=filas.slice(0,5);
+  var cols=['FECHA','SEMANA','MES','CLAVE','NOMBRE','SAL_DIA','HORAS_DOBLES','HORAS_TRIPLES'];
+  prevEl.innerHTML=
+    '<div class="card border-0 rounded-3" style="background:#f0fdf4;padding:16px">'
+    +'<div class="d-flex justify-content-between align-items-center mb-3">'
+    +'<p class="fw-bold mb-0" style="color:#16a34a"><i class="fas fa-check-circle me-2"></i>'+filas.length+' filas detectadas</p>'
+    +'<button class="btn fw-bold rounded-pill px-4" style="background:#16a34a;color:white" onclick="_teCargarAlServidor(window._teFilasPrev)">'
+    +'<i class="fas fa-cloud-upload-alt me-2"></i>Cargar '+filas.length+' registros</button>'
+    +'</div>'
+    +'<div class="table-responsive">'
+    +'<table class="table table-sm table-bordered" style="font-size:.78rem"><thead class="table-success"><tr>'
+    +cols.map(function(c){return '<th>'+c+'</th>';}).join('')+'<th>ÁREA</th><th>IMPORTE</th>'
+    +'</tr></thead><tbody>'
+    +preview.map(function(r){
+      return '<tr>'+cols.map(function(c){
+        var v=r[c]!==undefined?r[c]:(r[c.toLowerCase()]!==undefined?r[c.toLowerCase()]:'');
+        var disp;
+        if(c==='FECHA') disp=_nomFmtFechaRaw(v);
+        else if(c==='SAL_DIA') disp=_nomFmtPeso(v);
+        else disp=v===''||v===null||v===undefined?'—':v;
+        return '<td>'+disp+'</td>';
+      }).join('')
+        +'<td class="text-muted fst-italic">auto</td><td class="text-muted fst-italic">auto</td></tr>';
+    }).join('')+'</tbody></table></div>'
+    +(filas.length>5?'<p class="text-muted small mb-0">...y '+(filas.length-5)+' filas más.</p>':'')
+    +'</div>';
+  window._teFilasPrev=filas;
+}
+
+function _teCargarAlServidor(filas){
+  if(!filas||!filas.length){Swal.fire('Sin datos','','warning');return;}
+  Swal.fire({
+    title:'¿Cargar '+filas.length+' registros de Tiempo Extra?',
+    icon:'question',showCancelButton:true,
+    confirmButtonText:'Sí, cargar',confirmButtonColor:'#16a34a',cancelButtonText:'Cancelar'
+  }).then(function(r){
+    if(!r.isConfirmed) return;
+    toggleSaving(true,'Cargando...');
+    google.script.run
+      .withSuccessHandler(function(res){
+        toggleSaving(false);
+        rhAlert('success','✅ Archivo cargado correctamente',res.msg||'',2500);
+        window._teFilasPrev=null;
+        document.getElementById('te-preview').innerHTML='';
+        document.getElementById('te-file').value='';
+      })
+      .withFailureHandler(function(e){toggleSaving(false);Swal.fire('Error',''+e,'error');})
+      .cargarTiempoExtraMasivo(filas);
+  });
+}
+
+function _teConsultar(){
+  var fi=document.getElementById('te-fi').value;
+  var ff=document.getElementById('te-ff').value;
+  var fiFmt=fi?fi.split('-').reverse().join('/'):'';
+  var ffFmt=ff?ff.split('-').reverse().join('/'):'';
+  showLoader('Consultando tiempo extra...');
+  google.script.run
+    .withSuccessHandler(function(lista){hideLoader();window._teCache=lista||[];_teRenderTabla(lista||[]);})
+    .withFailureHandler(function(e){hideLoader();Swal.fire('Error',''+e,'error');})
+    .consultarTiempoExtra({fechaInicio:fiFmt,fechaFin:ffFmt});
+}
+
+function _teRenderTabla(lista){
+  var tablaEl=document.getElementById('te-tabla');
+  var btnExp=document.getElementById('te-btn-export');
+  if(!tablaEl) return;
+  if(!lista.length){
+    tablaEl.innerHTML='<div class="text-center text-muted py-5">Sin registros en ese rango.</div>';
+    if(btnExp) btnExp.style.display='none';
+    return;
+  }
+  if(btnExp) btnExp.style.display='';
+  var totHD=0, totHT=0, totImp=0;
+  lista.forEach(function(r){ totHD+=Number(r.horasDobles||0); totHT+=Number(r.horasTriples||0); totImp+=Number(r.importeTotal||0); });
+
+  tablaEl.innerHTML=
+    '<div class="row g-2 mb-3">'
+    +'<div class="col-md-3"><div class="stat-card" style="border-left-color:#16a34a"><div class="stat-val" style="color:#16a34a">'+lista.length+'</div><div class="stat-label">Registros</div></div></div>'
+    +'<div class="col-md-3"><div class="stat-card" style="border-left-color:#7c3aed"><div class="stat-val" style="color:#7c3aed">'+totHD.toFixed(1)+'h</div><div class="stat-label">Horas Dobles</div></div></div>'
+    +'<div class="col-md-3"><div class="stat-card" style="border-left-color:#ea580c"><div class="stat-val" style="color:#ea580c">'+totHT.toFixed(1)+'h</div><div class="stat-label">Horas Triples</div></div></div>'
+    +'<div class="col-md-3"><div class="stat-card" style="border-left-color:#16a34a"><div class="stat-val" style="color:#16a34a">'+_nomPeso(totImp)+'</div><div class="stat-label">Importe Total</div></div></div>'
+    +'</div>'
+    +'<div class="table-responsive" style="max-height:500px;overflow-y:auto">'
+    +'<table class="table table-hover table-sm align-middle" style="font-size:.82rem">'
+    +'<thead class="table-light" style="position:sticky;top:0;z-index:1"><tr>'
+    +'<th>Fecha</th><th>Semana</th><th>Mes</th><th>Clave</th><th style="min-width:140px">Nombre</th><th>Área</th>'
+    +'<th class="text-end">Sal/Día</th><th class="text-end">H.Dobles</th><th class="text-end">H.Triples</th>'
+    +'<th class="text-end fw-bold">Importe</th><th style="width:70px"></th></tr></thead><tbody>'
+    +(_rhSet('te',lista),lista.map(function(r,idx){return _teRow(r,idx);})).join('')+(_teBindEvents(),'')
+    +'</tbody></table></div>';
+}
+
+function _teRow(r,idx){
+  return '<tr id="te-row-'+idx+'">'
+    +'<td class="small">'+_nomFmtDate(r.fecha)+'</td>'
+    +'<td class="small">'+r.semana+'</td>'
+    +'<td class="small">'+r.mes+'</td>'
+    +'<td class="small fw-bold">'+r.clave+'</td>'
+    +'<td class="small">'+r.nombre+'</td>'
+    +'<td class="text-muted small">'+r.area+'</td>'
+    +'<td class="text-end small">'+_nomPeso(r.salDia)+'</td>'
+    +'<td class="text-end small">'+r.horasDobles+'</td>'
+    +'<td class="text-end small">'+r.horasTriples+'</td>'
+    +'<td class="text-end fw-bold" style="color:#16a34a;white-space:nowrap">'+_nomPeso(r.importeTotal)+'</td>'
+    +'<td><button class="btn btn-sm btn-outline-warning rounded-pill p-1" style="font-size:.65rem"'
+    +' data-accion="te-editar" data-idx="'+idx+'"><i class="fas fa-edit"></i></button></td></tr>';
+}
+
+function _teEditarModal(r,idx){
+  Swal.fire({
+    title: 'Editar Tiempo Extra',
+    width: '620px',
+    html:
+      '<div class="text-start row g-2" style="font-size:.85rem">'
+      +'<div class="col-3"><label class="form-label small fw-bold">Fecha</label>'
+      +'<input id="te-e-fecha" class="form-control form-control-sm" value="'+r.fecha+'"></div>'
+      +'<div class="col-3"><label class="form-label small fw-bold">Semana</label>'
+      +'<input id="te-e-semana" class="form-control form-control-sm" value="'+r.semana+'"></div>'
+      +'<div class="col-3"><label class="form-label small fw-bold">Mes</label>'
+      +'<input id="te-e-mes" class="form-control form-control-sm" value="'+r.mes+'"></div>'
+      +'<div class="col-3"><label class="form-label small fw-bold">Clave</label>'
+      +'<input id="te-e-clave" class="form-control form-control-sm" value="'+r.clave+'"></div>'
+      +'<div class="col-6"><label class="form-label small fw-bold">Nombre</label>'
+      +'<input id="te-e-nombre" class="form-control form-control-sm" value="'+r.nombre+'"></div>'
+      +'<div class="col-6"><label class="form-label small fw-bold">Área</label>'
+      +'<input id="te-e-area" class="form-control form-control-sm" value="'+r.area+'"></div>'
+      +'<div class="col-4"><label class="form-label small fw-bold">Sal/Día</label>'
+      +'<input id="te-e-saldia" type="number" step="0.01" class="form-control form-control-sm" value="'+r.salDia+'"></div>'
+      +'<div class="col-4"><label class="form-label small fw-bold">Horas Dobles</label>'
+      +'<input id="te-e-hd" type="number" step="0.5" class="form-control form-control-sm" value="'+r.horasDobles+'" oninput="_teRecalcImporte()"></div>'
+      +'<div class="col-4"><label class="form-label small fw-bold">Horas Triples</label>'
+      +'<input id="te-e-ht" type="number" step="0.5" class="form-control form-control-sm" value="'+r.horasTriples+'" oninput="_teRecalcImporte()"></div>'
+      +'<div class="col-12"><label class="form-label small fw-bold">Importe Total <span class="text-muted">(auto)</span></label>'
+      +'<input id="te-e-imp" type="number" step="0.01" class="form-control form-control-sm" style="background:#fffbeb" value="'+r.importeTotal+'"></div>'
+      +'</div>',
+    showCancelButton:true,
+    confirmButtonText:'<i class="fas fa-save me-1"></i>Guardar',
+    cancelButtonText:'Cancelar',confirmButtonColor:'#16a34a',
+    preConfirm:function(){
+      return {
+        fecha:r.fecha, semana:document.getElementById('te-e-semana').value,
+        mes:document.getElementById('te-e-mes').value,
+        clave:document.getElementById('te-e-clave').value,
+        nombre:document.getElementById('te-e-nombre').value,
+        area:document.getElementById('te-e-area').value,
+        salDia:document.getElementById('te-e-saldia').value,
+        horasDobles:document.getElementById('te-e-hd').value,
+        horasTriples:document.getElementById('te-e-ht').value,
+        importeTotal:document.getElementById('te-e-imp').value
+      };
+    }
+  }).then(function(res){
+    if(!res.isConfirmed) return;
+    toggleSaving(true,'Guardando...');
+    google.script.run
+      .withSuccessHandler(function(ok){
+        toggleSaving(false);
+        if(ok==='OK'){
+          rhToast('success','✅ Tiempo extra guardado');
+          setTimeout(function(){_teConsultar();},1100);
+        } else { Swal.fire('Error',ok,'error'); }
+      })
+      .withFailureHandler(function(e){toggleSaving(false);Swal.fire('Error',''+e,'error');})
+      .editarFilaTiempoExtra({rowIndex:r.rowIndex, campos:res.value});
+    });
+}
+
+function _teRecalcImporte(){
+  var sd=Number(document.getElementById('te-e-saldia').value||0);
+  var hd=Number(document.getElementById('te-e-hd').value||0);
+  var ht=Number(document.getElementById('te-e-ht').value||0);
+  var imp=sd>0?((sd/8)*2*hd)+((sd/8)*3*ht):0;
+  document.getElementById('te-e-imp').value=imp.toFixed(2);
+}
+
+function _teExportar(){
+  _nomCargarSheetJS(function(){
+    var lista=window._teCache||[];
+    if(!lista.length){Swal.fire('Sin datos','Consulta primero.','info');return;}
+    var ws_data=[['Fecha','Semana','Mes','Clave','Nombre','Área','Sal/Día','H.Dobles','H.Triples','Importe']];
+    lista.forEach(function(r){
+      ws_data.push([r.fecha,r.semana,r.mes,r.clave,r.nombre,r.area,r.salDia,r.horasDobles,r.horasTriples,r.importeTotal]);
+    });
+    var ws=XLSX.utils.aoa_to_sheet(ws_data);
+    var wb=XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb,ws,'TiempoExtra');
+    XLSX.writeFile(wb,'TiempoExtra.xlsx');
+  });
+}
+
+
+// ══════════════════════════════════════════════════════════════════════
+//  MÓDULOS PRÓXIMOS (Incidencias, Nómina, Seguridad — en construcción)
+// ══════════════════════════════════════════════════════════════════════
+var _ICONS_MOD={
+  AUSENTISMO:'fa-user-clock',RETARDOS:'fa-clock',PERMISOS_EMP:'fa-calendar-minus',
+  NOMINA_SEMANAL:'fa-money-check-alt',NOMINA_QUINCENAL:'fa-money-bill-wave',TIEMPO_EXTRA:'fa-hourglass-half',
+  ACCIDENTABILIDAD:'fa-ambulance',INCAPACIDADES:'fa-hospital',
+  EPP:'fa-hard-hat',NORMATIVA:'fa-book',PROYECTOS_SH:'fa-project-diagram'
+};
+var _COLORS_MOD={
+  AUSENTISMO:'#ea580c',RETARDOS:'#ea580c',PERMISOS_EMP:'#ea580c',
+  NOMINA_SEMANAL:'#16a34a',NOMINA_QUINCENAL:'#16a34a',TIEMPO_EXTRA:'#16a34a',
+  ACCIDENTABILIDAD:'#0369a1',INCAPACIDADES:'#0369a1',EPP:'#0369a1',NORMATIVA:'#0369a1',PROYECTOS_SH:'#0369a1'
+};

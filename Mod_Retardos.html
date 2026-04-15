@@ -1,0 +1,104 @@
+function loadRetardos(){
+  showLoader('Cargando módulo de Retardos...');
+  google.script.run
+    .withSuccessHandler(function(cat){
+      hideLoader();
+      _incCat=cat.empleados||[];
+      renderFormRetardo();
+    })
+    .withFailureHandler(function(e){hideLoader();Swal.fire('Error',''+e,'error');})
+    .obtenerCatalogosIncidencias();
+}
+
+function renderFormRetardo(){
+  document.getElementById('content-area').innerHTML=
+    '<div class="card-pro mb-3">'
+    +'<div class="d-flex justify-content-between align-items-center mb-4">'
+    +'<div class="d-flex align-items-center gap-3">'
+    +'<div style="width:48px;height:48px;border-radius:12px;background:#ea580c20;display:flex;align-items:center;justify-content:center">'
+    +'<i class="fas fa-clock" style="color:#ea580c;font-size:1.4rem"></i></div>'
+    +'<div><h5 class="fw-bold m-0">Registrar Retardo</h5>'
+    +'<p class="text-muted small m-0">Registra la llegada tardía del empleado</p></div></div>'
+    +'<button class="btn btn-sm fw-bold rounded-pill px-3" style="background:#1a237e;color:white" onclick="loadConsultaRetardos()">'
+    +'<i class="fas fa-list me-1"></i>Ver registros</button></div>'
+
+    +'<div class="row g-3 mb-4">'
+    +'<div class="col-md-6"><label class="form-label small fw-bold">Empleado *</label>'
+    +_incCampoEmp('ret-emp-txt','ret-emp','ret-emp-ac','_retCargarEmp')+'</div>'
+    +'<div class="col-md-3"><label class="form-label small fw-bold">Núm. Empleado</label>'
+    +'<input id="ret-numEmp" class="form-control" readonly style="background:#f8fafc"></div>'
+    +'<div class="col-md-3"><label class="form-label small fw-bold">Fecha *</label>'
+    +'<input id="ret-fecha" type="date" class="form-control" value="'+_incHoyDate()+'"></div>'
+    +'<div class="col-md-6"><label class="form-label small fw-bold">Departamento</label>'
+    +'<input id="ret-dept" class="form-control" placeholder="Se carga al seleccionar empleado"></div>'
+    +'<div class="col-md-6"><label class="form-label small fw-bold">Puesto</label>'
+    +'<input id="ret-puesto" class="form-control" placeholder="Se carga al seleccionar empleado"></div>'
+    +'</div>'
+
+    +'<div class="row g-3 mb-4">'
+    +'<div class="col-md-3"><label class="form-label small fw-bold">Turno</label>'
+    +_incBtnTurno('ret-turno','ret-hora-prog')+'</div>'
+    +'<div class="col-md-3"><label class="form-label small fw-bold">Hora programada *</label>'
+    +'<input id="ret-hora-prog" type="time" class="form-control" oninput="ret_calcMinutos()"></div>'
+    +'<div class="col-md-3"><label class="form-label small fw-bold">Hora de llegada *</label>'
+    +'<input id="ret-hora-real" type="time" class="form-control" oninput="ret_calcMinutos()"></div>'
+    +'<div class="col-md-3"><label class="form-label small fw-bold">Minutos de retardo</label>'
+    +'<input id="ret-minutos" type="number" min="0" class="form-control" style="background:#fffbeb" readonly></div>'
+    +'<div class="col-md-4"><label class="form-label small fw-bold">¿Justificado?</label>'
+    +_incBtnJust('ret-just')+'</div>'
+    +'<div class="col-md-8"><label class="form-label small fw-bold">Observaciones</label>'
+    +'<input id="ret-obs" class="form-control" placeholder="Notas adicionales..."></div>'
+    +'</div>'
+
+    +'<div class="d-flex gap-3 justify-content-end">'
+    +'<button class="btn btn-outline-secondary rounded-pill px-4" onclick="renderFormRetardo()">'
+    +'<i class="fas fa-undo me-2"></i>Limpiar</button>'
+    +'<button class="btn fw-bold rounded-pill px-5" style="background:#ea580c;color:white" onclick="ret_guardar()">'
+    +'<i class="fas fa-save me-2"></i>Guardar Registro</button>'
+    +'</div></div>';
+}
+
+function _retCargarEmp(e){
+  document.getElementById('ret-numEmp').value =e.numEmpleado||'';
+  document.getElementById('ret-dept').value   =e.area       ||'';
+  document.getElementById('ret-puesto').value =e.puesto     ||'';
+}
+
+function ret_calcMinutos(){
+  var prog=document.getElementById('ret-hora-prog').value;
+  var real=document.getElementById('ret-hora-real').value;
+  if(!prog||!real){document.getElementById('ret-minutos').value='';return;}
+  var toMin=function(t){var p=t.split(':');return Number(p[0])*60+Number(p[1]||0);};
+  var diff=toMin(real)-toMin(prog);
+  document.getElementById('ret-minutos').value=diff>0?diff:0;
+}
+
+function ret_guardar(){
+  var empleado=document.getElementById('ret-emp').value.trim();
+  var fecha   =document.getElementById('ret-fecha').value;
+  var horaProg=document.getElementById('ret-hora-prog').value;
+  var horaReal=document.getElementById('ret-hora-real').value;
+  if(!empleado||!fecha||!horaProg||!horaReal){
+    Swal.fire('Campos incompletos','Empleado, Fecha y ambas horas son obligatorias.','warning');return;
+  }
+  var p=fecha.split('-'); var fechaFmt=p.length===3?p[2]+'/'+p[1]+'/'+p[0]:fecha;
+  var datos={
+    fecha:fechaFmt, empleado:empleado,
+    numEmpleado:    document.getElementById('ret-numEmp').value,
+    departamento:   document.getElementById('ret-dept').value,
+    puesto:         document.getElementById('ret-puesto').value,
+    turno:          document.getElementById('ret-turno').value,
+    horaProgramada: horaProg, horaReal:horaReal,
+    minutosRetardo: document.getElementById('ret-minutos').value||'0',
+    justificado:    document.getElementById('ret-just').value,
+    observaciones:  document.getElementById('ret-obs').value
+  };
+  toggleSaving(true,'Guardando...');
+  google.script.run
+    .withSuccessHandler(function(folio){
+      toggleSaving(false);
+      rhAlert('success','✅ Retardo registrado','Folio: '+folio,2200);
+    })
+    .withFailureHandler(function(e){toggleSaving(false);Swal.fire('Error',''+e,'error');})
+    .guardarRetardo(datos);
+}

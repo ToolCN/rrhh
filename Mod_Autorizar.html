@@ -1,0 +1,99 @@
+function loadAutorizar(){
+  showLoader('Cargando solicitudes...');
+  google.script.run
+    .withSuccessHandler(function(lista){
+      hideLoader();
+      aut_solicitudes=lista||[];
+      aut_seleccionados.clear();
+      document.getElementById('content-area').innerHTML=
+        '<div class="d-flex align-items-center justify-content-between mb-3">'
+        +'<h6 class="fw-bold m-0">Solicitudes Pendientes de Autorizar</h6>'
+        +'<button class="btn btn-sm fw-bold rounded-pill px-3" style="background:#f1f5f9;color:#0f172a" onclick="aut_toggleAll()" id="aut-btn-all">Seleccionar Todas</button>'
+        +'</div>'
+        +'<div id="aut-grid"></div>';
+      aut_render();
+    })
+    .withFailureHandler(function(e){hideLoader();Swal.fire('Error',''+e,'error');})
+    .obtenerSolicitudesEstado('SOLICITADO');
+}
+function aut_render(){
+  var grid=document.getElementById('aut-grid');
+  if(!aut_solicitudes.length){grid.innerHTML='<p class="text-center text-muted py-5">Sin solicitudes pendientes.</p>';return;}
+  grid.innerHTML=aut_solicitudes.map(function(s){
+    var sel=aut_seleccionados.has(s.idSol)?'selected':'';
+    return '<div class="sol-card '+sel+'" onclick="aut_toggle(\''+s.idSol+'\')">'
+      +'<input type="checkbox" style="width:22px;height:22px;pointer-events:none" '+(sel?'checked':'')+'>'
+      +'<img src="'+(s.foto||'')+'" onerror="this.src=\'https://ui-avatars.com/api/?name='+encodeURIComponent(s.nombre)+'\'">'
+      +'<div style="flex:1">'
+      +'<div class="fw-bold small">FOLIO: '+s.folio+'</div>'
+      +'<div class="fw-bold">'+s.nombre+'</div>'
+      +'<div class="d-flex gap-2 mt-1 align-items-center" onclick="event.stopPropagation()">'
+      +'<input type="date" id="aut-ini-'+s.idSol+'" class="form-control form-control-sm" style="width:140px" value="'+s.inicio+'">'
+      +'<input type="date" id="aut-fin-'+s.idSol+'" class="form-control form-control-sm" style="width:140px" value="'+s.fin+'">'
+      +'<input type="number" id="aut-dias-'+s.idSol+'" class="form-control form-control-sm" style="width:70px" value="'+s.dias+'">'
+      +'<span class="badge-estado badge-'+s.estado+'">'+s.estado+'</span>'
+      +'</div>'
+      +(s.obs ? '<div style="font-size:.78rem;color:#7f1d1d;font-weight:700;margin-top:4px"><i class="fas fa-comment-dots me-1"></i>'+s.obs+'</div>' : '')
+      +'</div>'
+      +'<div class="d-flex flex-column gap-1" onclick="event.stopPropagation()">'
+      +'<button class="btn btn-sm fw-bold rounded-pill px-3" style="background:#22c55e;color:white" onclick="aut_individual(\''+s.idSol+'\',\'AUTORIZADO\')"><i class="fas fa-check me-1"></i>Autorizar</button>'
+      +'<button class="btn btn-sm fw-bold rounded-pill px-3" style="background:#ef4444;color:white" onclick="aut_individual(\''+s.idSol+'\',\'RECHAZADO\')"><i class="fas fa-times me-1"></i>Rechazar</button>'
+      +'</div>'
+      +'</div>';
+  }).join('');
+  var fabBar=document.getElementById('fab-bar');
+  fabBar.classList.toggle('visible',aut_seleccionados.size>0);
+  document.getElementById('fab-autorizar').style.display=aut_seleccionados.size>0?'':'none';
+  document.getElementById('fab-rechazar').style.display=aut_seleccionados.size>0?'':'none';
+  document.getElementById('fab-count-ok').innerText=aut_seleccionados.size;
+  document.getElementById('fab-count-no').innerText=aut_seleccionados.size;
+}
+function aut_toggle(id){aut_seleccionados.has(id)?aut_seleccionados.delete(id):aut_seleccionados.add(id);aut_render();}
+function aut_toggleAll(){
+  if(aut_seleccionados.size===aut_solicitudes.length)aut_seleccionados.clear();
+  else aut_solicitudes.forEach(function(s){aut_seleccionados.add(s.idSol);});
+  aut_render();
+}
+function aut_individual(id,estado){
+  var d={inicio:document.getElementById('aut-ini-'+id).value,fin:document.getElementById('aut-fin-'+id).value,dias:document.getElementById('aut-dias-'+id).value};
+  showLoader('Procesando...');
+  google.script.run
+    .withSuccessHandler(function(){hideLoader();loadAutorizar();})
+    .withFailureHandler(function(e){hideLoader();Swal.fire('Error',''+e,'error');})
+    .procesarEstadoSolicitud(id,estado,d);
+}
+function fabAutorizar(){
+  if(!confirm('¿Autorizar '+aut_seleccionados.size+' seleccionadas?'))return;
+  showLoader('Autorizando...');
+  google.script.run
+    .withSuccessHandler(function(){
+      hideLoader();
+      aut_seleccionados.clear();
+      document.getElementById('fab-bar').classList.remove('visible');
+      document.getElementById('fab-autorizar').style.display='none';
+      document.getElementById('fab-rechazar').style.display='none';
+      loadAutorizar();
+    })
+    .withFailureHandler(function(e){hideLoader();Swal.fire('Error',''+e,'error');})
+    .procesarLoteSolicitudes(Array.from(aut_seleccionados),'AUTORIZADO');
+}
+function fabRechazar(){
+  if(!confirm('¿Rechazar '+aut_seleccionados.size+' seleccionadas?'))return;
+  showLoader('Rechazando...');
+  google.script.run
+    .withSuccessHandler(function(){
+      hideLoader();
+      aut_seleccionados.clear();
+      document.getElementById('fab-bar').classList.remove('visible');
+      document.getElementById('fab-autorizar').style.display='none';
+      document.getElementById('fab-rechazar').style.display='none';
+      loadAutorizar();
+    })
+    .withFailureHandler(function(e){hideLoader();Swal.fire('Error',''+e,'error');})
+    .procesarLoteSolicitudes(Array.from(aut_seleccionados),'RECHAZADO');
+}
+
+// ══════════════════════════════════════════════════════════
+//  MÓDULO: APLICAR VACACIONES
+// ══════════════════════════════════════════════════════════
+var apl_solicitudes=[], apl_seleccionados=new Set();

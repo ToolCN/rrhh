@@ -1,0 +1,103 @@
+function loadPerfilesPuestos(){
+  showLoader('Cargando perfiles...');
+  google.script.run
+    .withSuccessHandler(function(res){
+      hideLoader();
+      _perfilesRenderLista(res);
+    })
+    .withFailureHandler(function(e){ hideLoader(); Swal.fire('Error',''+e,'error'); })
+    .obtenerTodosPerfiles();
+}
+
+function _perfilesRenderLista(areas){
+  var ca = document.getElementById('content-area');
+  ca._perfilesBound = false;
+  var areaKeys = Object.keys(areas||{});
+
+  var cards = '';
+  if(!areaKeys.length){
+    cards = '<div style="text-align:center;padding:48px;color:#94a3b8">'
+      +'<i class="fas fa-folder-open" style="font-size:3rem;margin-bottom:12px;display:block"></i>'
+      +'<div>Aún no hay perfiles creados.<br>Entra a Capacitación, haz clic en un puesto y empieza a llenar el perfil.</div>'
+      +'</div>';
+  } else {
+    for(var ai=0; ai<areaKeys.length; ai++){
+      var area   = areaKeys[ai];
+      var puestos = areas[area];
+      cards += '<div style="margin-bottom:20px">'
+        +'<div style="font-size:.7rem;font-weight:700;color:#7B1034;text-transform:uppercase;'
+        +'letter-spacing:.08em;margin-bottom:8px;padding-bottom:4px;border-bottom:2px solid #f1f5f9">'+area+'</div>'
+        +'<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:10px">';
+      for(var pi=0; pi<puestos.length; pi++){
+        var p = puestos[pi];
+        var catsFilled = 0;
+        var catKeys = Object.keys(p.cats);
+        for(var ki=0; ki<catKeys.length; ki++){
+          var c = p.cats[catKeys[ki]];
+          if(c.objetivo||c.metodo||(c.tareas&&c.tareas.length)) catsFilled++;
+        }
+        cards += '<div class="perfiles-card" data-area="'+p.area+'" data-puesto="'+p.puesto+'"'
+          +' style="background:white;border:2px solid #e2e8f0;border-radius:12px;padding:14px;'
+          +'cursor:pointer;transition:all .15s;border-left:4px solid #7B1034">'
+          +'<div style="font-size:.85rem;font-weight:700;color:#0f172a;margin-bottom:4px">'+p.puesto+'</div>'
+          +(p.objetivo?'<div style="font-size:.75rem;color:#64748b;margin-bottom:6px;line-height:1.3;'
+            +'overflow:hidden;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical">'+p.objetivo+'</div>':'')
+          +'<div style="font-size:.72rem;color:'+(catsFilled>0?'#16a34a':'#94a3b8')+';font-weight:600">'
+          +'<i class="fas fa-'+(catsFilled>0?'check-circle':'circle')+' me-1"></i>'
+          +catsFilled+'/9 categorías con detalle</div>'
+          +'</div>';
+      }
+      cards += '</div></div>';
+    }
+  }
+
+  ca.innerHTML =
+    '<div class="card-pro" style="padding:20px 24px">'
+    +'<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:20px">'
+    +'<div style="display:flex;align-items:center;gap:14px">'
+    +'<img src="https://www.toolcn.mx/cdn/shop/files/logo_ToolCN_shopify.png?v=1751677238" style="height:48px;object-fit:contain">'
+    +'<div>'
+    +'<div style="font-size:.65rem;color:#94a3b8;font-weight:700;text-transform:uppercase">Recursos Humanos</div>'
+    +'<div style="font-size:1.2rem;font-weight:900;color:#0f172a">PERFIL DE PUESTOS</div>'
+    +'</div>'
+    +'</div>'
+    +'</div>'
+    +cards
+    +'</div>';
+
+  if(!ca._perfilesBound){
+    ca._perfilesBound = true;
+    ca.addEventListener('click', function(e){
+      var card = e.target.closest('.perfiles-card');
+      if(card){
+        var area   = card.getAttribute('data-area');
+        var puesto = card.getAttribute('data-puesto');
+        showLoader('Cargando perfil...');
+        google.script.run
+          .withSuccessHandler(function(res){
+            hideLoader();
+            _perfil_datos     = res;
+            _perfil_catActiva = null;
+            _perfilRenderDetalle(false);
+          })
+          .withFailureHandler(function(e){ hideLoader(); Swal.fire('Error',''+e,'error'); })
+          .obtenerPerfilPuesto(area, puesto);
+      }
+    });
+  }
+}
+
+// ══════════════════════════════════════════════════════════════════════
+//  MÓDULO: EVALUACIONES
+// ══════════════════════════════════════════════════════════════════════
+var _eval_datos    = null; // { empleados, cats }
+var _eval_activo   = null; // evaluación abierta en el editor
+var _eval_emp      = null; // empleado activo
+
+var EVAL_CALIF_LABELS = {
+  'D': { label:'D — No acreditado',           color:'#dc2626', bg:'#fee2e2' },
+  'C': { label:'C — Necesita capacitación',   color:'#d97706', bg:'#fef3c7' },
+  'B': { label:'B — Aprobado mínimo',         color:'#2563eb', bg:'#dbeafe' },
+  'A': { label:'A — Aprobado',                color:'#16a34a', bg:'#dcfce7' },
+  '':  { label:'Sin evaluar',                 color:'#94a3b8', bg:'#f1f5f9' }
+};

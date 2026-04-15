@@ -1,0 +1,181 @@
+function loadUsuarios(){
+  showLoader('Cargando usuarios...');
+  google.script.run
+    .withSuccessHandler(function(users){hideLoader();renderUsuarios(users||[]);})
+    .withFailureHandler(function(e){hideLoader();Swal.fire('Error',''+e,'error');})
+    .getUsuariosAdmin();
+}
+function buildPermsHTML(activos){
+  // Agrupar permisos por group
+  var grupos={};
+  var orden=[];
+  PERMISOS_LIST_RH.forEach(function(p){
+    var g=p.group||'General';
+    if(!grupos[g]){grupos[g]=[];orden.push(g);}
+    grupos[g].push(p);
+  });
+  var html='<div class="perm-groups">';
+  orden.forEach(function(g){
+    html+='<div><div class="perm-group-label"><i class="fas '
+      +({'General':'fa-cog','Plantilla':'fa-users','Vacaciones':'fa-umbrella-beach',
+         'Sanciones':'fa-gavel','Incidencias':'fa-exclamation-triangle',
+         'Nómina':'fa-money-check-alt','Seg & Hig':'fa-hard-hat'}[g]||'fa-circle')
+      +' me-1"></i>'+g+'</div>';
+    html+='<div class="perm-check-grid">';
+    grupos[g].forEach(function(p){
+      var checked=activos.includes(p.perm);
+      html+='<div class="perm-item">'
+        +'<input type="checkbox" id="perm-'+p.perm+'" value="'+p.perm+'" '+(checked?'checked':'')+' class="form-check-input">'
+        +'<label for="perm-'+p.perm+'" class="m-0">'+p.label+'</label></div>';
+    });
+    html+='</div></div>';
+  });
+  return html+'</div>';
+}
+
+// ── Renderizar filas de tabla de usuarios sin JSON.stringify en onclick ──
+function _nomUsersRows(users) {
+  _rhSet('users', users);
+  return users.map(function(u, ui) {
+    var perms = (u.permisos||'').split(',')
+      .map(function(p){ return p.trim(); })
+      .filter(function(p){ return p.startsWith('RH_'); });
+    var badges = perms.map(function(p){
+      return '<span class="badge bg-primary-subtle text-primary me-1">'+p+'</span>';
+    }).join('');
+    // IMPORTANTE: usar data-idx en lugar de onclick con parámetros complejos
+    return '<tr>'
+      +'<td class="fw-bold">'+u.nombre+'</td>'
+      +'<td>'+badges+'</td>'
+      +'<td><div class="d-flex gap-1">'
+      +'<button class="btn btn-sm btn-outline-primary rounded-pill" data-accion="editar-usr" data-idx="'+ui+'">Editar</button>'
+      +'<button class="btn btn-sm btn-outline-danger rounded-pill" data-accion="eliminar-usr" data-nombre="'+u.nombre+'">Eliminar</button>'
+      +'</div></td></tr>';
+  }).join('');
+}
+// Delegado de eventos para tabla de usuarios (se llama después de renderizar)
+function _usersBindEvents(){
+  var area = document.getElementById('content-area');
+  if(!area || area._usersBound) return;
+  area._usersBound = true;
+  area.addEventListener('click', function(ev){
+    var btn = ev.target.closest('[data-accion]');
+    if(!btn) return;
+    var accion = btn.getAttribute('data-accion');
+    if(accion === 'editar-usr'){
+      var idx = parseInt(btn.getAttribute('data-idx'), 10);
+      editarUsuario(_rhGet('users', idx));
+    } else if(accion === 'eliminar-usr'){
+      eliminarUsuario(btn.getAttribute('data-nombre'));
+    }
+  });
+}
+
+
+function renderUsuarios(users){
+  document.getElementById('content-area').innerHTML=
+    '<div class="card-pro">'
+    +'<div class="d-flex justify-content-between align-items-center mb-4">'
+    +'<h5 class="fw-bold m-0" style="color:var(--rh-color)"><i class="fas fa-users-cog me-2"></i>Usuarios RH</h5>'
+    +'<button class="btn fw-bold rounded-pill px-4" style="background:var(--rh-color);color:white" onclick="modalNuevoUsuario()"><i class="fas fa-user-plus me-2"></i>Nuevo</button>'
+    +'</div>'
+    +'<div class="table-responsive"><table class="table table-hover align-middle">'
+    +'<thead class="table-light"><tr><th>Nombre</th><th>Permisos RH</th><th>Acciones</th></tr></thead>'
+    +'<tbody>'+_nomUsersRows(users)+'</tbody></table></div></div>';
+  setTimeout(_usersBindEvents, 0);
+}
+function modalNuevoUsuario(){
+  Swal.fire({title:'Nuevo Usuario',html:'<div class="text-start"><label class="form-label small fw-bold">Nombre *</label><input id="sw-un" class="form-control bg-light border-0 mb-3 p-3" placeholder="Nombre completo"><label class="form-label small fw-bold">Contraseña *</label><input id="sw-up" type="text" class="form-control bg-light border-0 mb-3 p-3" placeholder="PIN o contraseña"><label class="form-label small fw-bold">Permisos RH</label>'+buildPermsHTML([])+'</div>',
+    width:'500px',showCancelButton:true,confirmButtonText:'Crear',confirmButtonColor:'var(--rh-color)',
+    preConfirm:function(){
+      var n=document.getElementById('sw-un').value.trim().toUpperCase();
+      var p=document.getElementById('sw-up').value.trim();
+      if(!n||!p){Swal.showValidationMessage('Completa nombre y contraseña');return false;}
+      var cPerms=PERMISOS_LIST_RH.filter(function(x){return document.getElementById('perm-'+x.perm)&&document.getElementById('perm-'+x.perm).checked;}).map(function(x){return x.perm;});
+      return {nombre:n,password:p,permisos:cPerms.join(','),permisos_base:''};
+    }
+  }).then(function(r){
+    if(!r.isConfirmed)return;
+    toggleSaving(true,'Guardando...');
+    google.script.run
+      .withSuccessHandler(function(res){toggleSaving(false);if(res==='OK'||res.length){rhToast('success','✅ Usuario creado');showLoader('Actualizando...');google.script.run.withSuccessHandler(function(u){hideLoader();renderUsuarios(u||[]);}).getUsuariosAdmin();}else{Swal.fire('Error',res||'','error');}})
+      .withFailureHandler(function(){toggleSaving(false);})
+      .guardarUsuario(r.value);
+  });
+}
+function editarUsuario(u){
+  var todosPerms=(u.permisos||'').split(',').map(function(p){return p.trim();}).filter(Boolean);
+  var pa=todosPerms.filter(function(p){return p.startsWith('RH_');});
+  var otrosPerms=todosPerms.filter(function(p){return !p.startsWith('RH_');});
+  Swal.fire({title:'Editar: '+u.nombre,html:'<div class="text-start"><label class="form-label small fw-bold">Contraseña</label><input id="sw-upe" type="text" class="form-control bg-light border-0 mb-3 p-3" value="'+(u.password||'')+'"><label class="form-label small fw-bold">Permisos RH</label>'+buildPermsHTML(pa)+'</div>',
+    width:'500px',showCancelButton:true,confirmButtonText:'Guardar',confirmButtonColor:'var(--rh-color)',
+    preConfirm:function(){
+      var cSelec=PERMISOS_LIST_RH.filter(function(x){return document.getElementById('perm-'+x.perm)&&document.getElementById('perm-'+x.perm).checked;}).map(function(x){return x.perm;});
+      var todosNuevos=otrosPerms.concat(cSelec);
+      return {nombre:u.nombre,password:document.getElementById('sw-upe').value.trim(),permisos:todosNuevos.join(','),permisos_base:''};
+    }
+  }).then(function(r){
+    if(!r.isConfirmed)return;
+    toggleSaving(true,'Actualizando...');
+    google.script.run
+      .withSuccessHandler(function(){toggleSaving(false);rhToast('success','✅ Usuario actualizado');showLoader('Actualizando...');google.script.run.withSuccessHandler(function(u){hideLoader();renderUsuarios(u||[]);}).getUsuariosAdmin();})
+      .withFailureHandler(function(){toggleSaving(false);})
+      .actualizarUsuario(r.value);
+  });
+}
+function eliminarUsuario(nombre){
+  Swal.fire({title:'¿Eliminar '+nombre+'?',html:'<small class="text-muted">Esta acción no se puede deshacer</small>',icon:'warning',showCancelButton:true,confirmButtonText:'Eliminar',confirmButtonColor:'#ef4444',cancelButtonText:'Cancelar'})
+    .then(function(r){
+      if(!r.isConfirmed)return;
+      toggleSaving(true,'Eliminando...');
+      google.script.run
+        .withSuccessHandler(function(){toggleSaving(false);rhToast('success','✅ Usuario eliminado');showLoader('Actualizando...');google.script.run.withSuccessHandler(function(u){hideLoader();renderUsuarios(u||[]);}).getUsuariosAdmin();})
+        .withFailureHandler(function(){toggleSaving(false);})
+        .eliminarUsuario(nombre);
+    });
+}
+// ══════════════════════════════════════════════════════════════════════
+//  MÓDULO: SANCIONES — Actas Administrativas + Consulta
+// ══════════════════════════════════════════════════════════════════════
+
+var _sancionesData = null;
+
+// Formatea cualquier valor de fecha a dd/mm/aaaa (maneja Date objects y strings)
+function _fmtFecha(v){
+  if(!v||v===''||v==='—')return '—';
+  var s=String(v).trim();
+  // Cualquier representación que contenga zona horaria o timestamp completo
+  if(s.length>10){
+    var d=new Date(s);
+    if(!isNaN(d.getTime())){
+      // Usar offset GMT-6 para evitar que el día cambie por timezone
+      var utc=d.getTime()+(d.getTimezoneOffset()*60000);
+      var d6=new Date(utc-(6*3600000));
+      return ('0'+d6.getDate()).slice(-2)+'/'
+        +('0'+(d6.getMonth()+1)).slice(-2)+'/'+d6.getFullYear();
+    }
+  }
+  // yyyy-mm-dd → dd/mm/yyyy
+  if(/^\d{4}-\d{2}-\d{2}$/.test(s)){
+    var p=s.split('-');
+    return p[2]+'/'+p[1]+'/'+p[0];
+  }
+  return s; // ya viene como dd/mm/aaaa
+}
+
+var TIPOS_FALTA = [
+  'Ausentismo injustificado','Retardo reiterado','Desobediencia a instrucciones',
+  'Uso inadecuado de equipo','Conducta inapropiada con compañeros',
+  'Daño a bienes de la empresa','Violación a normas de seguridad',
+  'Robo o deshonestidad','Acoso laboral','Otro'
+];
+var TIPOS_SANCION = [
+  'Amonestación verbal','Amonestación escrita (1ra vez)','Amonestación escrita (2da vez)',
+  'Suspensión 1 día','Suspensión 3 días','Suspensión 5 días','Rescisión de contrato'
+];
+var ARTICULOS_REGLAMENTO = [
+  'Art. 1 - Conducta y disciplina general','Art. 2 - Puntualidad y asistencia',
+  'Art. 3 - Uso de equipo y herramientas','Art. 4 - Seguridad e higiene',
+  'Art. 5 - Relaciones laborales','Art. 6 - Confidencialidad',
+  'Art. 134 LFT - Obligaciones del trabajador','Art. 47 LFT - Causas de rescisión'
+];

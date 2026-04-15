@@ -1,0 +1,750 @@
+function loadAjustesCat(){
+  showLoader('Cargando evaluaciones...');
+  google.script.run
+    .withSuccessHandler(function(res){
+      hideLoader();
+      _eval_datos = res;
+      _evalRenderLista();
+    })
+    .withFailureHandler(function(e){ hideLoader(); Swal.fire('Error',''+e,'error'); })
+    .obtenerPlantillaEvaluaciones();
+}
+
+// ── Lista principal ───────────────────────────────────────────────────
+// ── Filtros activos por columna { campo: Set de valores seleccionados } ──
+var _evalFiltrosActivos = {};
+
+function _evalRenderLista(){
+  var ca  = document.getElementById('content-area');
+  var emp = (_eval_datos && _eval_datos.empleados) || [];
+
+  // Ordenar por CLAVE ascendente
+  emp.sort(function(a,b){
+    var ca2=String(a.clave||'').toUpperCase(), cb=String(b.clave||'').toUpperCase();
+    return ca2<cb?-1:ca2>cb?1:0;
+  });
+
+  // Columnas filtrables
+  var COLS = [
+    { key:'clave',   label:'CLAVE' },
+    { key:'nombre',  label:'NOMBRE' },
+    { key:'area',    label:'ÁREA' },
+    { key:'puesto',  label:'PUESTO' },
+    { key:'salDia',  label:'SAL. DÍA' },
+    { key:'ingreso', label:'INGRESO' }
+  ];
+
+  // Historial máx
+  var maxHist=0;
+  emp.forEach(function(e){ if(e.historial.length>maxHist) maxHist=e.historial.length; });
+  maxHist=Math.min(maxHist,5);
+
+  // ── Aplicar filtros al array de empleados ──────────────────────────
+  function _aplicarFiltros(busq){
+    var bq=(busq||'').trim().toUpperCase();
+    return emp.filter(function(e){
+      if(bq){
+        var hay=[e.clave,e.nombre,e.area,e.puesto].join('|').toUpperCase();
+        if(hay.indexOf(bq)===-1) return false;
+      }
+      for(var ci=0;ci<COLS.length;ci++){
+        var k=COLS[ci].key;
+        var sel=_evalFiltrosActivos[k];
+        if(sel && Object.keys(sel).length>0){
+          var val=String(e[k]||'').trim();
+          if(!sel[val]) return false;
+        }
+      }
+      return true;
+    });
+  }
+
+  // ── Construir tbody ────────────────────────────────────────────────
+  function _buildTbody(lista){
+    if(!lista.length){
+      var ncols=6+maxHist+1;
+      return '<tbody id="eval-tbody"><tr><td colspan="'+ncols+'" style="text-align:center;padding:32px;'
+        +'color:#94a3b8;font-size:.85rem">Sin resultados para los filtros aplicados.</td></tr></tbody>';
+    }
+    var tbody='<tbody id="eval-tbody">';
+    lista.forEach(function(e,ei){
+      var bg=ei%2===0?'#f8fafc':'#ffffff';
+      tbody+='<tr style="background:'+bg+'">'
+        +'<td style="padding:8px 10px;font-size:.8rem;font-weight:700;color:#7B1034;border-bottom:1px solid #e2e8f0;white-space:nowrap">'+e.clave+'</td>'
+        +'<td style="padding:8px 10px;font-size:.8rem;font-weight:600;color:#0f172a;border-bottom:1px solid #e2e8f0;white-space:nowrap">'+e.nombre+'</td>'
+        +'<td style="padding:8px 10px;font-size:.78rem;color:#475569;border-bottom:1px solid #e2e8f0;white-space:nowrap">'+e.area+'</td>'
+        +'<td style="padding:8px 10px;font-size:.78rem;color:#475569;border-bottom:1px solid #e2e8f0;white-space:nowrap">'+e.puesto+'</td>'
+        +'<td style="padding:8px 10px;font-size:.78rem;font-weight:700;color:#16a34a;text-align:right;border-bottom:1px solid #e2e8f0;white-space:nowrap">'+e.salDia+'</td>'
+        +'<td style="padding:8px 10px;font-size:.78rem;color:#64748b;border-bottom:1px solid #e2e8f0;white-space:nowrap">'+e.ingreso+'</td>';
+      for(var hi=0;hi<maxHist;hi++){
+        var ev=e.historial[hi];
+        var bl=hi===0?'border-left:2px solid #e2e8f0;':'';
+        if(ev){
+          var ac=ev.ascenso==='SI'?'#16a34a':(ev.ascenso==='NO'?'#dc2626':'#94a3b8');
+          tbody+='<td style="padding:6px 8px;border-bottom:1px solid #e2e8f0;'+bl+'">'
+            +'<div class="eval-hist-chip" data-id="'+ev.id+'" data-clave="'+e.clave+'" data-nombre="'+e.nombre+'" data-area="'+e.area+'" data-puesto="'+e.puesto+'"'
+            +' style="background:#f1f5f9;border:1px solid #e2e8f0;border-radius:8px;padding:4px 8px;cursor:pointer;min-width:90px">'
+            +'<div style="font-size:.7rem;font-weight:700;color:#0f172a">'+ev.fecha+'</div>'
+            +'<div style="font-size:.65rem;color:'+ac+';font-weight:600">'+(ev.ascenso?'Ascenso: '+ev.ascenso:'Sin resultado')+'</div>'
+            +'</div></td>';
+        } else {
+          tbody+='<td style="padding:6px 8px;border-bottom:1px solid #e2e8f0;'+bl+'"><span style="color:#e2e8f0;font-size:.7rem">—</span></td>';
+        }
+      }
+      tbody+='<td style="padding:6px 8px;border-bottom:1px solid #e2e8f0">'
+        +'<button class="eval-btn-nueva" data-clave="'+e.clave+'" data-nombre="'+e.nombre+'" data-area="'+e.area+'" data-puesto="'+e.puesto+'"'
+        +' style="background:#7B1034;color:white;border:none;border-radius:8px;padding:5px 10px;font-size:.72rem;font-weight:700;cursor:pointer;white-space:nowrap">'
+        +'<i class="fas fa-plus me-1"></i>Nueva</button>'
+        +'</td></tr>';
+    });
+    return tbody+'</tbody>';
+  }
+
+  // ── Construir encabezado con iconos de filtro ──────────────────────
+  function _thFiltro(col){
+    var activo=_evalFiltrosActivos[col.key] && Object.keys(_evalFiltrosActivos[col.key]).length>0;
+    var align=col.key==='salDia'?'text-align:right;':'';
+    return '<th class="eval-th-filtro" data-col="'+col.key+'"'
+      +' style="color:white;padding:9px 12px;font-size:.72rem;font-weight:700;white-space:nowrap;'
+      +'cursor:pointer;user-select:none;'+align+'position:relative">'
+      +col.label
+      +'<span style="margin-left:5px;font-size:.65rem;opacity:'+(activo?'1':'.5')+';'
+      +'color:'+(activo?'#fbbf24':'white')+'">▼</span>'
+      +(activo?'<span style="position:absolute;top:4px;right:4px;width:7px;height:7px;'
+        +'background:#fbbf24;border-radius:50%;display:block"></span>':'')
+      +'</th>';
+  }
+
+  var thHist='color:white;padding:9px 12px;font-size:.72rem;font-weight:700;white-space:nowrap;border-left:2px solid #1e3a5f';
+  var thead='<thead><tr style="background:#0f172a">';
+  COLS.forEach(function(col){ thead+=_thFiltro(col); });
+  thead+='<th style="'+thHist+'">ÚLTIMA EVAL.</th>';
+  for(var hi=1;hi<maxHist;hi++) thead+='<th style="color:#94a3b8;padding:9px 10px;font-size:.72rem;font-weight:600">EVAL. '+(hi+1)+'</th>';
+  thead+='<th style="color:white;padding:9px 10px;font-size:.72rem;font-weight:700">ACCIÓN</th></tr></thead>';
+
+  var filtrados=_aplicarFiltros('');
+
+  ca.innerHTML=
+    '<div class="card-pro" style="padding:20px 24px">'
+    +'<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px;flex-wrap:wrap;gap:10px">'
+    +'<div style="display:flex;align-items:center;gap:14px">'
+    +'<img src="https://www.toolcn.mx/cdn/shop/files/logo_ToolCN_shopify.png?v=1751677238" style="height:44px;object-fit:contain">'
+    +'<div><div style="font-size:.65rem;color:#94a3b8;font-weight:700;text-transform:uppercase">Recursos Humanos</div>'
+    +'<div style="font-size:1.15rem;font-weight:900;color:#0f172a">EVALUACIONES</div></div>'
+    +'</div>'
+    +'<div style="display:flex;align-items:center;gap:8px;background:#f8fafc;border:2px solid #e2e8f0;'
+    +'border-radius:10px;padding:6px 14px;min-width:280px">'
+    +'<i class="fas fa-search" style="color:#94a3b8;font-size:.85rem"></i>'
+    +'<input id="eval-busqueda" type="text" placeholder="Buscar nombre, clave, área, puesto..." '
+    +'style="border:none;background:transparent;outline:none;font-size:.82rem;width:100%;color:#334155">'
+    +'</div>'
+    +'</div>'
+    +'<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:10px;min-height:28px">'
+    +'<span id="eval-conteo" style="font-size:.72rem;color:#94a3b8">'+emp.length+' operadores</span>'
+    +'<span id="eval-chips"></span>'
+    +'</div>'
+    +'<div style="overflow-x:auto;position:relative">'
+    +'<table id="eval-tabla" style="border-collapse:separate;border-spacing:0;width:100%;border:1px solid #e2e8f0;border-radius:10px;overflow:hidden">'
+    +thead+_buildTbody(filtrados)
+    +'</table>'
+    +'<div id="eval-filtro-popup" style="display:none;position:fixed;z-index:99999;'
+    +'background:white;border:1px solid #e2e8f0;border-radius:12px;'
+    +'box-shadow:0 8px 32px rgba(0,0,0,.15);width:260px;padding:0;overflow:hidden">'
+    +'</div>'
+    +'</div></div>';
+
+  // ── Función actualizar tabla + chips ──────────────────────────────
+  function _refrescar(){
+    var busq=(document.getElementById('eval-busqueda')||{value:''}).value||'';
+    var filtrados2=_aplicarFiltros(busq);
+
+    var oldTb=document.getElementById('eval-tbody');
+    if(oldTb){
+      var tmp=document.createElement('div');
+      tmp.innerHTML='<table>'+_buildTbody(filtrados2)+'</table>';
+      oldTb.parentNode.replaceChild(tmp.querySelector('tbody'),oldTb);
+    }
+
+    var cEl=document.getElementById('eval-conteo');
+    if(cEl) cEl.textContent=filtrados2.length+' de '+emp.length+' operadores';
+
+    var chipsEl=document.getElementById('eval-chips');
+    if(chipsEl){
+      var chipsHtml='';
+      COLS.forEach(function(col){
+        var sel=_evalFiltrosActivos[col.key]||{};
+        var vals=Object.keys(sel).filter(function(v){return sel[v];});
+        if(!vals.length) return;
+        chipsHtml+='<span style="display:inline-flex;align-items:center;gap:4px;background:#fff7ed;'
+          +'border:1px solid #fed7aa;border-radius:20px;padding:2px 10px;font-size:.7rem;'
+          +'font-weight:700;color:#ea580c">'
+          +col.label+': '+vals.slice(0,2).join(', ')+(vals.length>2?' +'+(vals.length-2):'')
+          +'<span class="eval-chip-clear" data-col="'+col.key+'" style="cursor:pointer;margin-left:2px;'
+          +'font-size:.75rem;color:#dc2626" title="Quitar filtro">✕</span></span> ';
+      });
+      chipsEl.innerHTML=chipsHtml;
+    }
+
+    document.querySelectorAll('.eval-th-filtro').forEach(function(th){
+      var col2=th.getAttribute('data-col');
+      var activo2=_evalFiltrosActivos[col2] && Object.keys(_evalFiltrosActivos[col2]).filter(function(v){return _evalFiltrosActivos[col2][v];}).length>0;
+      var spans=th.querySelectorAll('span');
+      if(spans[0]){ spans[0].style.opacity=activo2?'1':'.5'; spans[0].style.color=activo2?'#fbbf24':'white'; }
+      var dot=spans[1];
+      if(activo2 && !dot){
+        var d=document.createElement('span');
+        d.style.cssText='position:absolute;top:4px;right:4px;width:7px;height:7px;background:#fbbf24;border-radius:50%;display:block';
+        th.appendChild(d);
+      } else if(!activo2 && dot){ dot.remove(); }
+    });
+  }
+
+  // ── Abrir popup de filtro ─────────────────────────────────────────
+  function _abrirPopup(colKey, colLabel, thEl){
+    var popup=document.getElementById('eval-filtro-popup');
+    if(!popup) return;
+
+    var seen={};
+    emp.forEach(function(e){ var v=String(e[colKey]||'').trim(); if(v) seen[v]=1; });
+    var vals=Object.keys(seen).sort();
+    var selActual=_evalFiltrosActivos[colKey]||{};
+
+    popup.innerHTML=
+      '<div style="padding:10px 12px;border-bottom:1px solid #f1f5f9;background:#f8fafc">'
+      +'<div style="font-size:.7rem;font-weight:900;color:#0f172a;text-transform:uppercase;margin-bottom:6px">'
+      +'<i class="fas fa-filter me-1" style="color:#7B1034"></i>'+colLabel+'</div>'
+      +'<div style="display:flex;align-items:center;gap:6px;background:white;border:1px solid #e2e8f0;'
+      +'border-radius:7px;padding:4px 8px">'
+      +'<i class="fas fa-search" style="color:#94a3b8;font-size:.7rem"></i>'
+      +'<input id="popup-busq" type="text" placeholder="Buscar..." '
+      +'style="border:none;outline:none;font-size:.75rem;width:100%">'
+      +'</div></div>'
+      +'<div style="display:flex;gap:6px;padding:6px 12px;border-bottom:1px solid #f1f5f9">'
+      +'<button id="popup-todo" style="flex:1;background:#f1f5f9;border:1px solid #e2e8f0;'
+      +'border-radius:6px;padding:3px;font-size:.68rem;font-weight:700;cursor:pointer;color:#475569">Todos</button>'
+      +'<button id="popup-ninguno" style="flex:1;background:#f1f5f9;border:1px solid #e2e8f0;'
+      +'border-radius:6px;padding:3px;font-size:.68rem;font-weight:700;cursor:pointer;color:#475569">Ninguno</button>'
+      +'</div>'
+      +'<div id="popup-lista" style="max-height:220px;overflow-y:auto;padding:6px 4px">'
+      +vals.map(function(v){
+        var chk=selActual[v]?'checked':'';
+        return '<label style="display:flex;align-items:center;gap:8px;padding:5px 8px;'
+          +'border-radius:7px;cursor:pointer;font-size:.78rem;color:#334155">'
+          +'<input type="checkbox" class="popup-chk" data-val="'+v+'" '+chk
+          +' style="width:14px;height:14px;accent-color:#7B1034;cursor:pointer"> '+v+'</label>';
+      }).join('')
+      +'</div>'
+      +'<div style="display:flex;gap:6px;padding:8px 12px;border-top:1px solid #f1f5f9">'
+      +'<button id="popup-aplicar" style="flex:1;background:#7B1034;color:white;border:none;'
+      +'border-radius:8px;padding:7px;font-size:.78rem;font-weight:700;cursor:pointer">Aplicar</button>'
+      +'<button id="popup-cancelar" style="flex:1;background:#f1f5f9;border:1px solid #e2e8f0;'
+      +'border-radius:8px;padding:7px;font-size:.78rem;font-weight:700;cursor:pointer;color:#475569">Cancelar</button>'
+      +'</div>';
+
+    var rect=thEl.getBoundingClientRect();
+    popup.style.display='block';
+    popup.style.top=(rect.bottom+6)+'px';
+    var left=rect.left;
+    if(left+260>window.innerWidth) left=window.innerWidth-270;
+    popup.style.left=Math.max(4,left)+'px';
+
+    document.getElementById('popup-busq').addEventListener('input',function(){
+      var q=this.value.trim().toUpperCase();
+      document.querySelectorAll('#popup-lista label').forEach(function(lbl){
+        var v=lbl.querySelector('.popup-chk').getAttribute('data-val').toUpperCase();
+        lbl.style.display=(!q||v.indexOf(q)!==-1)?'':'none';
+      });
+    });
+    document.getElementById('popup-todo').addEventListener('click',function(){
+      document.querySelectorAll('#popup-lista .popup-chk').forEach(function(c){
+        if(c.closest('label').style.display!=='none') c.checked=true;
+      });
+    });
+    document.getElementById('popup-ninguno').addEventListener('click',function(){
+      document.querySelectorAll('#popup-lista .popup-chk').forEach(function(c){ c.checked=false; });
+    });
+    document.getElementById('popup-aplicar').addEventListener('click',function(){
+      var nuevo={};
+      document.querySelectorAll('#popup-lista .popup-chk').forEach(function(c){
+        if(c.checked) nuevo[c.getAttribute('data-val')]=true;
+      });
+      _evalFiltrosActivos[colKey]=nuevo;
+      popup.style.display='none';
+      _refrescar();
+    });
+    document.getElementById('popup-cancelar').addEventListener('click',function(){
+      popup.style.display='none';
+    });
+  }
+
+  // ── Event delegation ──────────────────────────────────────────────
+  if(ca._evalHandler) ca.removeEventListener('click', ca._evalHandler);
+  ca._evalHandler=function(e){
+    var popup=document.getElementById('eval-filtro-popup');
+    if(popup && popup.style.display!=='none' && !popup.contains(e.target) && !e.target.closest('.eval-th-filtro')){
+      popup.style.display='none';
+    }
+    var th=e.target.closest('.eval-th-filtro');
+    if(th){
+      var col3=th.getAttribute('data-col');
+      var colObj=null;
+      COLS.forEach(function(c){ if(c.key===col3) colObj=c; });
+      if(colObj) _abrirPopup(col3, colObj.label, th);
+      return;
+    }
+    var chipClear=e.target.closest('.eval-chip-clear');
+    if(chipClear){
+      _evalFiltrosActivos[chipClear.getAttribute('data-col')]={};
+      _refrescar();
+      return;
+    }
+    var btnNueva=e.target.closest('.eval-btn-nueva');
+    if(btnNueva){
+      _eval_emp={ clave:btnNueva.getAttribute('data-clave'), nombre:btnNueva.getAttribute('data-nombre'), area:btnNueva.getAttribute('data-area'), puesto:btnNueva.getAttribute('data-puesto') };
+      _evalAbrirEditor(null); return;
+    }
+    var chip=e.target.closest('.eval-hist-chip');
+    if(chip){
+      _eval_emp={ clave:chip.getAttribute('data-clave'), nombre:chip.getAttribute('data-nombre'), area:chip.getAttribute('data-area'), puesto:chip.getAttribute('data-puesto') };
+      _evalAbrirEditor(chip.getAttribute('data-id')); return;
+    }
+  };
+  ca.addEventListener('click', ca._evalHandler);
+
+  if(ca._evalInputHandler) ca.removeEventListener('input', ca._evalInputHandler);
+  ca._evalInputHandler=function(e){
+    if(e.target.id==='eval-busqueda') _refrescar();
+  };
+  ca.addEventListener('input', ca._evalInputHandler);
+}
+
+// ── Abrir editor de evaluación ────────────────────────────────────────
+function _evalAbrirEditor(idEval){
+  showLoader('Cargando...');
+  if(idEval){
+    google.script.run
+      .withSuccessHandler(function(res){
+        hideLoader();
+        _eval_activo = res || { id: idEval, cats:{}, fecha:'', comentarios:'', ascenso:'', comentariosEvaluado:'' };
+        _evalRenderEditor();
+      })
+      .withFailureHandler(function(e){ hideLoader(); Swal.fire('Error',''+e,'error'); })
+      .obtenerDetalleEvaluacion(idEval);
+  } else {
+    var idNuevo = 'EVAL-' + new Date().getTime();
+    showLoader('Cargando perfil...');
+    google.script.run
+      .withSuccessHandler(function(detalle){
+        hideLoader();
+        _eval_activo = {
+          id: idNuevo,
+          fecha: new Date().toLocaleDateString('es-MX',{day:'2-digit',month:'2-digit',year:'numeric'}),
+          clave: _eval_emp.clave, nombre: _eval_emp.nombre,
+          area: _eval_emp.area, puesto: _eval_emp.puesto,
+          comentarios:'', ascenso:'', comentariosEvaluado:'',
+          cats: {}
+        };
+        ['SEG','CAL','PRO','MAT','LUB','OPE','HER','OPT','COD'].forEach(function(c){
+          var pd = (detalle && detalle.cats && detalle.cats[c]) || {};
+          _eval_activo.cats[c] = {
+            evalFinal:  '',
+            urlAdjunto: pd.urlAdjunto || '',
+            tareas:     [],
+            tareasDesc: pd.tareasDesc || pd.tareas || []
+          };
+        });
+        _evalRenderEditor();
+      })
+      .withFailureHandler(function(){ hideLoader(); _evalRenderEditor(); })
+      .obtenerPerfilPuesto(_eval_emp.area, _eval_emp.puesto);
+  }
+}
+
+// ── Render editor ─────────────────────────────────────────────────────
+function _evalRenderEditor(){
+  var ca  = document.getElementById('content-area');
+  var ev  = _eval_activo;
+  var emp = _eval_emp;
+  var cats= ['SEG','CAL','PRO','MAT','LUB','OPE','HER','OPT','COD'];
+
+  var tabs = '';
+  cats.forEach(function(cat,ci){
+    var info   = (ev.cats && ev.cats[cat]) || {};
+    var ef     = info.evalFinal || '';
+    var cl     = EVAL_CALIF_LABELS[ef] || EVAL_CALIF_LABELS[''];
+    tabs += '<button class="eval-cat-tab" data-cat="'+cat+'"'
+      +' style="border:2px solid #e2e8f0;border-radius:10px;padding:6px 12px;margin:0 4px 8px 0;'
+      +'background:'+cl.bg+';color:'+cl.color+';font-weight:700;font-size:.78rem;cursor:pointer">'
+      +cat+(ef?' ('+ef+')':'')
+      +'</button>';
+  });
+
+  function _catPanel(cat){
+    var info     = (ev.cats && ev.cats[cat]) || { evalFinal:'', urlAdjunto:'', tareas:[], tareasDesc:[] };
+    var desc     = (CAP_DESC && CAP_DESC[cat]) || {};
+    var tareasD  = info.tareasDesc || [];
+    var tareasV  = info.tareas     || [];
+
+    var tareasHtml = '';
+    var nTareas = Math.max(tareasD.length, tareasV.length, 1);
+    for(var ti=0; ti<nTareas; ti++){
+      var tdesc = tareasD[ti] || ('Tarea ' + (ti+1));
+      var tval  = tareasV[ti] || '';
+      var opts  = ['','D','C','B','A'].map(function(v){
+        var cl2 = EVAL_CALIF_LABELS[v] || EVAL_CALIF_LABELS[''];
+        return '<option value="'+v+'"'+(tval===v?' selected':'')+' style="background:'+cl2.bg+';color:'+cl2.color+'">'+
+          (v ? cl2.label : '— Sin evaluar —')+'</option>';
+      }).join('');
+      tareasHtml +=
+        '<div style="display:flex;align-items:center;gap:10px;padding:8px 10px;'
+        +'background:'+(ti%2===0?'#f8fafc':'#ffffff')+';border-radius:8px;margin-bottom:4px">'
+        +'<div style="flex:1;font-size:.8rem;color:#334155">'
+        +'<span style="font-weight:700;color:#7B1034;margin-right:6px">'+(ti+1)+'.</span>'+tdesc+'</div>'
+        +'<select class="eval-tarea-sel" data-cat="'+cat+'" data-idx="'+ti+'"'
+        +' style="border:2px solid #e2e8f0;border-radius:8px;padding:4px 8px;font-size:.78rem;font-weight:600;'
+        +'min-width:180px;background:white;cursor:pointer">'+opts+'</select>'
+        +'</div>';
+    }
+
+    var efBtns = ['D','C','B','A'].map(function(v){
+      var cl2 = EVAL_CALIF_LABELS[v];
+      var act = info.evalFinal === v;
+      return '<button class="eval-final-btn" data-cat="'+cat+'" data-val="'+v+'"'
+        +' style="border:2px solid '+(act?cl2.color:'#e2e8f0')+';border-radius:10px;padding:7px 14px;'
+        +'background:'+(act?cl2.bg:'white')+';color:'+(act?cl2.color:'#475569')+';'
+        +'font-weight:700;font-size:.8rem;cursor:pointer;transition:all .15s">'+cl2.label+'</button>';
+    }).join('');
+
+    // Adjunto — solo lectura, viene del perfil de puestos
+    var adjUrl = info.urlAdjunto || '';
+    var adjHtml =
+      '<div style="display:flex;align-items:center;gap:10px;margin-top:12px;flex-wrap:wrap;'
+      +'padding:8px 12px;background:#f8fafc;border:1px solid #e2e8f0;border-radius:8px">'
+      +'<span style="font-size:.7rem;font-weight:700;color:#64748b;text-transform:uppercase;white-space:nowrap">'
+      +'<i class="fas fa-paperclip me-1"></i>Archivo guía:</span>'
+      +(adjUrl
+        ? '<a href="'+adjUrl+'" target="_blank" style="font-size:.8rem;color:#2563eb;text-decoration:underline;flex:1">'
+          +'<i class="fas fa-file me-1"></i>Ver archivo</a>'
+          +'<button class="eval-adj-print" data-url="'+adjUrl+'"'
+          +' style="background:white;border:1px solid #e2e8f0;border-radius:8px;padding:4px 10px;'
+          +'font-size:.72rem;font-weight:600;cursor:pointer;color:#475569">'
+          +'<i class="fas fa-print me-1"></i>Imprimir</button>'
+        : '<span style="font-size:.78rem;color:#94a3b8;font-style:italic">Sin adjunto — sube el archivo desde Perfil de Puestos</span>')
+      +'</div>';
+
+    return '<div>'
+      +'<div style="display:flex;align-items:center;gap:8px;margin-bottom:10px">'
+      +'<span style="font-size:1rem;font-weight:900;color:#7B1034">'+cat+'</span>'
+      +'<span style="font-size:.85rem;color:#64748b">— '+(desc.label||cat)+'</span>'
+      +'</div>'
+      +'<div style="font-size:.75rem;font-style:italic;color:#94a3b8;margin-bottom:12px;'
+      +'padding:7px 10px;background:#f8fafc;border-radius:8px;border:1px solid #e2e8f0">'+(desc.desc||'')+'</div>'
+      +'<div style="font-size:.7rem;font-weight:700;color:#64748b;text-transform:uppercase;margin-bottom:8px">Tareas a evaluar</div>'
+      +tareasHtml
+      +'<div style="margin-top:14px">'
+      +'<div style="font-size:.7rem;font-weight:700;color:#64748b;text-transform:uppercase;margin-bottom:8px">Evaluación final de categoría</div>'
+      +'<div style="display:flex;gap:8px;flex-wrap:wrap">'+efBtns+'</div>'
+      +'</div>'
+      +adjHtml
+      +'</div>';
+  }
+
+  var catActiva = cats[0];
+
+  ca.innerHTML =
+    '<div class="card-pro" style="padding:20px 24px">'
+    +'<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px;flex-wrap:wrap;gap:10px">'
+    +'<div style="display:flex;align-items:center;gap:10px">'
+    +'<button id="eval-btn-volver" style="background:#f1f5f9;border:2px solid #e2e8f0;border-radius:10px;'
+    +'padding:7px 14px;font-size:.82rem;font-weight:700;cursor:pointer;color:#475569">'
+    +'<i class="fas fa-arrow-left me-1"></i>Evaluaciones</button>'
+    +'<div>'
+    +'<div style="font-size:.65rem;color:#94a3b8;font-weight:700;text-transform:uppercase">'+emp.area+' — '+emp.puesto+'</div>'
+    +'<div style="font-size:1.1rem;font-weight:900;color:#0f172a">'+emp.nombre+'</div>'
+    +'</div>'
+    +'</div>'
+    +'<div style="display:flex;gap:8px">'
+    +'<button id="eval-btn-guardar" style="background:#1a237e;color:white;border:none;border-radius:10px;'
+    +'padding:8px 18px;font-size:.85rem;font-weight:700;cursor:pointer">'
+    +'<i class="fas fa-save me-1"></i>Guardar</button>'
+    +'<button id="eval-btn-imprimir" style="background:#7B1034;color:white;border:none;border-radius:10px;'
+    +'padding:8px 18px;font-size:.85rem;font-weight:700;cursor:pointer">'
+    +'🖨️ Imprimir PDF</button>'
+    +'</div>'
+    +'</div>'
+    +'<div style="display:flex;gap:16px;flex-wrap:wrap;margin-bottom:16px;'
+    +'padding:12px 16px;background:#f8fafc;border-radius:10px;border:1px solid #e2e8f0">'
+    +'<div><label style="font-size:.68rem;font-weight:700;color:#64748b;text-transform:uppercase;display:block">Fecha</label>'
+    +'<input id="eval-fecha" type="text" value="'+_esc(ev.fecha)+'" class="form-control form-control-sm" style="width:120px"></div>'
+    +'<div><label style="font-size:.68rem;font-weight:700;color:#64748b;text-transform:uppercase;display:block">¿Ascenso?</label>'
+    +'<div style="display:flex;gap:6px;margin-top:2px">'
+    +['SI','NO','PENDIENTE'].map(function(v){
+      var act = ev.ascenso === v;
+      var col = v==='SI'?'#16a34a':(v==='NO'?'#dc2626':'#d97706');
+      return '<button class="eval-ascenso-btn" data-val="'+v+'"'
+        +' style="border:2px solid '+(act?col:'#e2e8f0')+';border-radius:8px;padding:4px 10px;'
+        +'background:'+(act?'#f0fdf4':'white')+';color:'+(act?col:'#475569')+';'
+        +'font-size:.75rem;font-weight:700;cursor:pointer">'+v+'</button>';
+    }).join('')
+    +'</div></div>'
+    +'<div style="flex:1;min-width:200px"><label style="font-size:.68rem;font-weight:700;color:#64748b;text-transform:uppercase;display:block">Comentarios del evaluador</label>'
+    +'<textarea id="eval-comentarios" rows="2" class="form-control form-control-sm" style="resize:none;margin-top:2px" placeholder="Observaciones generales...">'+_esc(ev.comentarios)+'</textarea></div>'
+    +'<div style="flex:1;min-width:200px"><label style="font-size:.68rem;font-weight:700;color:#64748b;text-transform:uppercase;display:block">Comentarios del evaluado</label>'
+    +'<textarea id="eval-comentarios-eval" rows="2" class="form-control form-control-sm" style="resize:none;margin-top:2px" placeholder="Comentarios del trabajador...">'+_esc(ev.comentariosEvaluado)+'</textarea></div>'
+    +'</div>'
+    +'<div style="margin-bottom:12px">'+tabs+'</div>'
+    +'<div id="eval-cat-panel" style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:12px;padding:16px;min-height:300px">'
+    +_catPanel(catActiva)
+    +'</div>'
+    +'</div>';
+
+  if(ca._evalHandler) ca.removeEventListener('click', ca._evalHandler);
+  ca._evalHandler = function(e){
+    if(e.target.closest('#eval-btn-volver')){ loadAjustesCat(); return; }
+    if(e.target.closest('#eval-btn-guardar')){ _evalGuardar(); return; }
+    if(e.target.closest('#eval-btn-imprimir')){ _evalImprimir(); return; }
+    var tab = e.target.closest('.eval-cat-tab');
+    if(tab){
+      catActiva = tab.getAttribute('data-cat');
+      _evalSyncActivo();
+      document.querySelectorAll('.eval-cat-tab').forEach(function(t){
+        var c  = t.getAttribute('data-cat');
+        var info2 = (_eval_activo.cats && _eval_activo.cats[c]) || {};
+        var ef2   = info2.evalFinal || '';
+        var cl2   = EVAL_CALIF_LABELS[ef2] || EVAL_CALIF_LABELS[''];
+        var actT  = c === catActiva;
+        t.style.background   = actT ? cl2.color : cl2.bg;
+        t.style.color        = actT ? 'white'   : cl2.color;
+        t.style.borderColor  = cl2.color;
+      });
+      document.getElementById('eval-cat-panel').innerHTML = _catPanel(catActiva);
+      return;
+    }
+    var efBtn = e.target.closest('.eval-final-btn');
+    if(efBtn){
+      var cat3 = efBtn.getAttribute('data-cat');
+      var val3 = efBtn.getAttribute('data-val');
+      if(!_eval_activo.cats[cat3]) _eval_activo.cats[cat3] = { evalFinal:'', urlAdjunto:'', tareas:[], tareasDesc:[] };
+      _eval_activo.cats[cat3].evalFinal = val3;
+      document.querySelectorAll('.eval-final-btn[data-cat="'+cat3+'"]').forEach(function(b){
+        var bv  = b.getAttribute('data-val');
+        var cl3 = EVAL_CALIF_LABELS[bv];
+        var act3= bv === val3;
+        b.style.borderColor = act3 ? cl3.color : '#e2e8f0';
+        b.style.background  = act3 ? cl3.bg    : 'white';
+        b.style.color       = act3 ? cl3.color  : '#475569';
+      });
+      var tabEl = document.querySelector('.eval-cat-tab[data-cat="'+cat3+'"]');
+      if(tabEl){ var cl4=EVAL_CALIF_LABELS[val3]; tabEl.style.background=cl4.bg; tabEl.style.color=cl4.color; tabEl.style.borderColor=cl4.color; tabEl.textContent=cat3+(val3?' ('+val3+')':''); }
+      return;
+    }
+    var ascBtn = e.target.closest('.eval-ascenso-btn');
+    if(ascBtn){
+      var val4 = ascBtn.getAttribute('data-val');
+      _eval_activo.ascenso = val4;
+      document.querySelectorAll('.eval-ascenso-btn').forEach(function(b){
+        var bv4=b.getAttribute('data-val');
+        var col4=bv4==='SI'?'#16a34a':(bv4==='NO'?'#dc2626':'#d97706');
+        var act4=bv4===val4;
+        b.style.borderColor=act4?col4:'#e2e8f0';
+        b.style.background=act4?'#f0fdf4':'white';
+        b.style.color=act4?col4:'#475569';
+      });
+      return;
+    }
+    var adjPrint = e.target.closest('.eval-adj-print');
+    if(adjPrint){ window.open(adjPrint.getAttribute('data-url'),'_blank'); return; }
+  };
+  ca.addEventListener('click', ca._evalHandler);
+
+  if(ca._evalChangeHandler) ca.removeEventListener('change', ca._evalChangeHandler);
+  ca._evalChangeHandler = function(e){
+    var sel = e.target.closest('.eval-tarea-sel');
+    if(sel){
+      var cat4 = sel.getAttribute('data-cat');
+      var idx4 = parseInt(sel.getAttribute('data-idx'), 10);
+      if(!_eval_activo.cats[cat4]) _eval_activo.cats[cat4] = { evalFinal:'', urlAdjunto:'', tareas:[], tareasDesc:[] };
+      _eval_activo.cats[cat4].tareas[idx4] = sel.value;
+    }
+  };
+  ca.addEventListener('change', ca._evalChangeHandler);
+
+  ca.addEventListener('change', function(e){
+    var fi = e.target.closest('.eval-file-input');
+    if(!fi) return;
+    var cat5 = fi.getAttribute('data-cat');
+    var file = fi.files[0];
+    if(!file) return;
+    var reader = new FileReader();
+    reader.onload = function(ev2){
+      var b64 = ev2.target.result.split(',')[1];
+      toggleSaving(true,'Subiendo archivo...');
+      google.script.run
+        .withSuccessHandler(function(url){
+          toggleSaving(false);
+          if(!_eval_activo.cats[cat5]) _eval_activo.cats[cat5] = { evalFinal:'', urlAdjunto:'', tareas:[], tareasDesc:[] };
+          _eval_activo.cats[cat5].urlAdjunto = url;
+          rhAlert('success','Archivo subido','El archivo se guardó en Drive.',2000);
+          document.getElementById('eval-cat-panel').innerHTML = _catPanel(cat5);
+        })
+        .withFailureHandler(function(err){ toggleSaving(false); Swal.fire('Error',''+err,'error'); })
+        .subirAdjuntoEvaluacion(b64, file.name, file.type);
+    };
+    reader.readAsDataURL(file);
+  });
+}
+
+// ── Sincronizar estado actual del DOM al objeto _eval_activo ──────────
+function _evalSyncActivo(){
+  var fechaEl = document.getElementById('eval-fecha');
+  if(fechaEl) _eval_activo.fecha = fechaEl.value;
+  var comEl = document.getElementById('eval-comentarios');
+  if(comEl) _eval_activo.comentarios = comEl.value;
+  var comEvEl = document.getElementById('eval-comentarios-eval');
+  if(comEvEl) _eval_activo.comentariosEvaluado = comEvEl.value;
+}
+
+// ── Guardar evaluación ────────────────────────────────────────────────
+function _evalGuardar(){
+  _evalSyncActivo();
+  toggleSaving(true,'Guardando evaluación...');
+  google.script.run
+    .withSuccessHandler(function(idGuardado){
+      toggleSaving(false);
+      _eval_activo.id = idGuardado;
+      rhAlert('success','Guardado','Evaluación guardada correctamente.',2000);
+    })
+    .withFailureHandler(function(e){ toggleSaving(false); Swal.fire('Error',''+e,'error'); })
+    .guardarEvaluacion(_eval_activo);
+}
+
+// ── Imprimir PDF ──────────────────────────────────────────────────────
+function _evalImprimir(){
+  _evalSyncActivo();
+  var ev   = _eval_activo;
+  var emp  = _eval_emp;
+  var cats = ['SEG','CAL','PRO','MAT','LUB','OPE','HER','OPT','COD'];
+  var fecha = new Date().toLocaleDateString('es-MX',{year:'numeric',month:'long',day:'numeric'});
+
+  var catsHtml = '';
+  cats.forEach(function(cat){
+    var info = (ev.cats && ev.cats[cat]) || { evalFinal:'', tareas:[], tareasDesc:[] };
+    var desc = (CAP_DESC && CAP_DESC[cat]) || {};
+    var ef   = info.evalFinal || '';
+    var cl   = EVAL_CALIF_LABELS[ef] || EVAL_CALIF_LABELS[''];
+    var tareasD = info.tareasDesc || [];
+    var tareasV = info.tareas     || [];
+    var nTareas = Math.max(tareasD.length, tareasV.length);
+    if(!nTareas && !ef) return;
+
+    var tareasHtml = '';
+    for(var ti=0; ti<nTareas; ti++){
+      var tdesc2 = tareasD[ti] || ('Tarea '+(ti+1));
+      var tval2  = tareasV[ti] || '';
+      var cl2    = EVAL_CALIF_LABELS[tval2] || EVAL_CALIF_LABELS[''];
+      tareasHtml +=
+        '<div style="display:flex;align-items:center;gap:6px;margin-bottom:3px;font-size:8px">'
+        +'<span style="color:#7B1034;font-weight:700;width:14px;flex-shrink:0">'+(ti+1)+'.</span>'
+        +'<span style="flex:1;color:#334155">'+tdesc2+'</span>'
+        +(tval2?'<span style="font-weight:700;color:'+cl2.color+';background:'+cl2.bg+';'
+          +'border-radius:4px;padding:1px 5px;white-space:nowrap">'+cl2.label+'</span>':'')
+        +'</div>';
+    }
+    catsHtml +=
+      '<div style="margin-bottom:10px;padding:8px 10px;border:1px solid #e2e8f0;border-radius:8px;'
+      +'border-left:4px solid '+cl.color+';-webkit-print-color-adjust:exact;print-color-adjust:exact">'
+      +'<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:5px">'
+      +'<div><span style="font-size:10px;font-weight:900;color:#7B1034">'+cat+'</span>'
+      +' <span style="font-size:9px;color:#475569;font-weight:600">'+desc.label+'</span></div>'
+      +(ef?'<span style="font-weight:700;font-size:9px;color:'+cl.color+';background:'+cl.bg+';'
+        +'border-radius:5px;padding:2px 8px;-webkit-print-color-adjust:exact;print-color-adjust:exact">'+cl.label+'</span>':'')
+      +'</div>'
+      +tareasHtml
+      +'</div>';
+  });
+
+  var printArea = document.getElementById('eval-print-area');
+  if(!printArea){ printArea=document.createElement('div'); printArea.id='eval-print-area'; printArea.style.display='none'; document.body.appendChild(printArea); }
+  var oldSt = document.getElementById('eval-print-style');
+  if(oldSt) oldSt.parentNode.removeChild(oldSt);
+  var st = document.createElement('style');
+  st.id = 'eval-print-style';
+  st.innerHTML =
+    '@media print{body *{visibility:hidden}'
+    +'#eval-print-area,#eval-print-area *{visibility:visible}'
+    +'#eval-print-area{display:block!important;position:absolute;left:0;top:0;width:100%;padding:0;margin:0;box-sizing:border-box;background:white;-webkit-print-color-adjust:exact;print-color-adjust:exact}'
+    +'@page{size:letter portrait;margin:12mm 14mm}}';
+  document.head.appendChild(st);
+
+  var ascCol = ev.ascenso==='SI'?'#16a34a':(ev.ascenso==='NO'?'#dc2626':'#d97706');
+
+  printArea.innerHTML =
+    '<div style="font-family:Arial,sans-serif;width:100%;padding:0 2mm;box-sizing:border-box">'
+    +'<div style="display:flex;align-items:center;justify-content:space-between;'
+    +'border-bottom:3px solid #7B1034;padding-bottom:8px;margin-bottom:12px;'
+    +'-webkit-print-color-adjust:exact;print-color-adjust:exact">'
+    +'<div style="display:flex;align-items:center;gap:12px">'
+    +'<img src="https://www.toolcn.mx/cdn/shop/files/logo_ToolCN_shopify.png?v=1751677238" style="height:38px;object-fit:contain">'
+    +'<div>'
+    +'<div style="font-size:7px;color:#64748b;font-weight:700;text-transform:uppercase;letter-spacing:.1em">Recursos Humanos</div>'
+    +'<div style="font-size:16px;font-weight:900;color:#0f172a;line-height:1.1">EVALUACIÓN DE DESEMPEÑO</div>'
+    +'<div style="font-size:9px;font-weight:700;color:#7B1034">'+emp.area+' — '+emp.puesto+'</div>'
+    +'</div>'
+    +'</div>'
+    +'<div style="text-align:right;font-size:8px;color:#94a3b8">'
+    +'<div style="font-weight:700;color:#475569">Fecha de evaluación</div>'
+    +'<div>'+ev.fecha+'</div>'
+    +'<div style="margin-top:3px;font-weight:700;color:#475569">Folio</div>'
+    +'<div style="font-size:7px">'+ev.id+'</div>'
+    +'</div>'
+    +'</div>'
+    +'<div style="display:flex;gap:16px;margin-bottom:10px;padding:8px 12px;'
+    +'background:#f8fafc;border:1px solid #e2e8f0;border-radius:8px;'
+    +'-webkit-print-color-adjust:exact;print-color-adjust:exact">'
+    +'<div><span style="font-size:7px;color:#64748b;font-weight:700;text-transform:uppercase">Nombre</span>'
+    +'<div style="font-size:11px;font-weight:900;color:#0f172a">'+emp.nombre+'</div></div>'
+    +'<div><span style="font-size:7px;color:#64748b;font-weight:700;text-transform:uppercase">Clave</span>'
+    +'<div style="font-size:11px;font-weight:700;color:#0f172a">'+emp.clave+'</div></div>'
+    +'<div><span style="font-size:7px;color:#64748b;font-weight:700;text-transform:uppercase">Área</span>'
+    +'<div style="font-size:11px;font-weight:700;color:#0f172a">'+emp.area+'</div></div>'
+    +'<div><span style="font-size:7px;color:#64748b;font-weight:700;text-transform:uppercase">Puesto</span>'
+    +'<div style="font-size:11px;font-weight:700;color:#0f172a">'+emp.puesto+'</div></div>'
+    +'</div>'
+    +'<div style="font-size:8px;font-weight:700;color:#64748b;text-transform:uppercase;letter-spacing:.07em;margin-bottom:6px">Resultados por Categoría</div>'
+    +catsHtml
+    +'<div style="margin:10px 0;padding:10px 12px;border:2px solid '+ascCol+';border-radius:8px;'
+    +'display:flex;align-items:center;justify-content:space-between;'
+    +'-webkit-print-color-adjust:exact;print-color-adjust:exact">'
+    +'<div style="font-size:10px;font-weight:700;color:#0f172a">Resultado: ¿Aplica Ascenso?</div>'
+    +'<div style="font-size:13px;font-weight:900;color:'+ascCol+'">'+( ev.ascenso||'PENDIENTE')+'</div>'
+    +'</div>'
+    +(ev.comentarios?'<div style="margin-bottom:8px;padding:7px 10px;background:#f8fafc;border:1px solid #e2e8f0;border-radius:8px">'
+      +'<div style="font-size:7px;font-weight:700;color:#64748b;text-transform:uppercase;margin-bottom:3px">Comentarios del Evaluador</div>'
+      +'<div style="font-size:9px;color:#334155">'+ev.comentarios+'</div></div>':'')
+    +(ev.comentariosEvaluado?'<div style="margin-bottom:10px;padding:7px 10px;background:#f8fafc;border:1px solid #e2e8f0;border-radius:8px">'
+      +'<div style="font-size:7px;font-weight:700;color:#64748b;text-transform:uppercase;margin-bottom:3px">Comentarios del Evaluado</div>'
+      +'<div style="font-size:9px;color:#334155">'+ev.comentariosEvaluado+'</div></div>':'')
+    +'<div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:20px;margin-top:16px">'
+    +['Evaluador','Evaluado','Dirección (VoBo)'].map(function(lbl){
+      return '<div style="text-align:center">'
+        +'<div style="border-top:1px solid #0f172a;padding-top:5px;margin-top:36px">'
+        +'<div style="font-size:8px;font-weight:700;color:#0f172a">'+lbl+'</div>'
+        +'<div style="font-size:7px;color:#94a3b8;margin-top:2px">Nombre y firma</div>'
+        +'</div></div>';
+    }).join('')
+    +'</div>'
+    +'<div style="border-top:1px solid #e2e8f0;padding-top:5px;margin-top:10px;'
+    +'display:flex;justify-content:space-between">'
+    +'<div style="font-size:7px;color:#94a3b8">Sistema de Recursos Humanos — Documento oficial</div>'
+    +'<div style="font-size:7px;color:#94a3b8">Impreso: '+fecha+'</div>'
+    +'</div>'
+    +'</div>';
+
+  printArea.style.display = 'block';
+  setTimeout(function(){ window.print(); }, 700);
+  setTimeout(function(){ printArea.style.display = 'none'; }, 6000);
+}
+
+</script>
+</body>
+</html>

@@ -1,0 +1,6 @@
+{
+  "scripts": {
+    "build": "node rebuild_main.js",
+    "deploy": "node rebuild_main.js && clasp push"
+  }
+}

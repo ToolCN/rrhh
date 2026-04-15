@@ -1,0 +1,1013 @@
+function loadCapacitacion(){
+  _cap_areaActiva = 0;
+  showLoader('Cargando Capacitación...');
+  google.script.run
+    .withSuccessHandler(function(res){
+      hideLoader();
+      _cap_datos = res;
+      _capRender();
+    })
+    .withFailureHandler(function(e){
+      hideLoader();
+      Swal.fire('Error',''+e,'error');
+    })
+    .obtenerCapacitacion();
+}
+
+function _capRender(){
+  var ca = document.getElementById('content-area');
+  if(!_cap_datos || !_cap_datos.areas || !_cap_datos.areas.length){
+    ca.innerHTML = '<div class="card-pro" style="text-align:center;padding:48px">'
+      +'<p class="text-muted">No se encontraron datos de capacitación.</p></div>';
+    return;
+  }
+
+  // Botones de área
+  var btns = '';
+  _cap_datos.areas.forEach(function(area, i){
+    var act = (i === _cap_areaActiva);
+    btns += '<button class="cap-area-btn" data-area-idx="'+i+'" style="'
+      +'background:'+(act?'#7B1034':'#f1f5f9')+';'
+      +'color:'+(act?'#fff':'#334155')+';'
+      +'border:2px solid '+(act?'#7B1034':'#e2e8f0')+';'
+      +'border-radius:20px;padding:6px 18px;margin:4px;'
+      +'font-size:.82rem;font-weight:600;cursor:pointer;'
+      +'transition:background .2s,color .2s">'
+      +area+'</button>';
+  });
+
+  ca.innerHTML =
+    '<div class="card-pro" style="padding:20px 24px">'
+    // Encabezado
+    +'<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:20px;flex-wrap:wrap;gap:10px">'
+    +'<div style="display:flex;align-items:center;gap:14px">'
+    +'<img src="https://www.toolcn.mx/cdn/shop/files/logo_ToolCN_shopify.png?v=1751677238" style="height:52px;object-fit:contain">'
+    +'<div>'
+    +'<div style="font-size:.65rem;color:#94a3b8;font-weight:700;text-transform:uppercase;letter-spacing:.08em">Recursos Humanos</div>'
+    +'<div style="font-size:1.25rem;font-weight:900;color:#0f172a;line-height:1.2">MATRIZ DE HABILIDADES</div>'
+    +'</div></div>'
+    +'<button id="cap-btn-imprimir" style="background:#7B1034;color:white;border:none;border-radius:10px;'
+    +'padding:9px 18px;font-size:.85rem;font-weight:700;cursor:pointer;'
+    +'display:flex;align-items:center;gap:7px;box-shadow:0 2px 8px rgba(123,16,52,.3)">'
+    +'🖨️ Imprimir</button>'
+    +'</div>'
+    // Botones área
+    +'<div id="cap-area-bar" style="display:flex;flex-wrap:wrap;gap:4px;margin-bottom:20px">'+btns+'</div>'
+    // Tabla
+    +'<div id="cap-tabla-wrap">'+_capTablaHtml()+'</div>'
+    // Leyenda niveles
+    +_capLeyendaNiveles()
+    // Leyenda categorías
+    +_capLeyendaCats()
+    +'</div>';
+
+  // Event delegation
+  if(!ca._capBound){
+    ca._capBound = true;
+    ca.addEventListener('click', function(e){
+      // Botón imprimir
+      if(e.target.closest('#cap-btn-imprimir')){ cap_imprimir(); return; }
+      // Clic en nombre de puesto → abrir detalle
+      var pLink = e.target.closest('.cap-puesto-link');
+      if(pLink){
+        var area   = pLink.getAttribute('data-area');
+        var puesto = pLink.getAttribute('data-puesto');
+        _capAbrirDetallePuesto(area, puesto);
+        return;
+      }
+      // Botón área
+      var btn = e.target.closest('.cap-area-btn');
+      if(btn){
+        _cap_areaActiva = parseInt(btn.getAttribute('data-area-idx'),10);
+        ca.querySelectorAll('.cap-area-btn').forEach(function(b){
+          var act = parseInt(b.getAttribute('data-area-idx'),10) === _cap_areaActiva;
+          b.style.background  = act ? '#7B1034' : '#f1f5f9';
+          b.style.color       = act ? '#fff'    : '#334155';
+          b.style.borderColor = act ? '#7B1034' : '#e2e8f0';
+        });
+        document.getElementById('cap-tabla-wrap').innerHTML = _capTablaHtml();
+        return;
+      }
+      // Celda editable
+      var cell = e.target.closest('.cap-cell');
+      if(cell){
+        var area   = cell.getAttribute('data-area');
+        var puesto = cell.getAttribute('data-puesto');
+        var cat    = cell.getAttribute('data-cat');
+        var valAct = parseInt(cell.getAttribute('data-val'),10);
+        // Ciclar al siguiente nivel
+        var idx = -1;
+        for(var ni=0;ni<CAP_NIVELES.length;ni++){ if(CAP_NIVELES[ni].val===valAct){ idx=ni; break; } }
+        var nextN = CAP_NIVELES[(idx+1) % CAP_NIVELES.length];
+        // Actualizar UI inmediatamente (optimistic)
+        cell.setAttribute('data-val', nextN.val);
+        cell.innerHTML = _capSvg(nextN.val);
+        // Actualizar cache
+        var filasDatos = _cap_datos.datos[area]||[];
+        for(var fi=0;fi<filasDatos.length;fi++){
+          if(filasDatos[fi].puesto===puesto){ filasDatos[fi][cat]=nextN.val; break; }
+        }
+        // Guardar en Sheets
+        google.script.run
+          .withSuccessHandler(function(r){ if(r!=='OK') console.warn('Cap guardar:',r); })
+          .withFailureHandler(function(er){ console.error('Cap error:',er); })
+          .guardarCapacitacion(area, puesto, cat, nextN.val);
+        return;
+      }
+    });
+  }
+}
+
+function _capTablaHtml(){
+  var area  = _cap_datos.areas[_cap_areaActiva];
+  var cats  = _cap_datos.cats || [];
+  var filas = (_cap_datos.datos[area]) || [];
+
+  if(!filas.length){
+    return '<p class="text-muted" style="text-align:center;padding:32px">Sin puestos para esta área.</p>';
+  }
+
+  // Encabezado tabla
+  var thead = '<thead><tr>'
+    +'<th style="background:#0f172a;color:white;padding:10px 14px;font-size:.8rem;'
+    +'font-weight:700;border-radius:8px 0 0 0;min-width:160px">CATEGORÍA</th>'
+    +'<th style="background:#0f172a;color:white;padding:10px 10px;font-size:.8rem;'
+    +'font-weight:700;text-align:right;min-width:80px;white-space:nowrap">SAL. SEM.</th>';
+  cats.forEach(function(cat, ci){
+    var isLast = ci === cats.length - 1;
+    thead += '<th style="background:#0f172a;color:white;padding:10px 8px;font-size:.8rem;'
+      +'font-weight:700;text-align:center;min-width:52px'+(isLast?';border-radius:0 8px 0 0':'')+'">'
+      +cat+'</th>';
+  });
+  thead += '</tr></thead>';
+
+  // Filas
+  var tbody = '<tbody>';
+  filas.forEach(function(f, ri){
+    var bg = ri%2===0 ? '#f8fafc' : '#ffffff';
+    tbody += '<tr style="background:'+bg+'">'
+      +'<td class="cap-puesto-link" data-area="'+area+'" data-puesto="'+f.puesto+'"'
+      +' style="padding:8px 14px;font-size:.82rem;font-weight:600;color:#7B1034;'
+      +'border-bottom:1px solid #e2e8f0;white-space:nowrap;cursor:pointer;'
+      +'text-decoration:underline dotted" title="Ver perfil de '+f.puesto+'">'
+      +'<i class="fas fa-external-link-alt" style="font-size:.65rem;margin-right:4px"></i>'
+      +f.puesto+'</td>'
+      +'<td style="padding:8px 10px;font-size:.82rem;font-weight:700;color:#16a34a;'
+      +'border-bottom:1px solid #e2e8f0;text-align:right;white-space:nowrap">'+(f.salSem||'—')+'</td>';
+    cats.forEach(function(cat){
+      var val = f[cat]||0;
+      tbody += '<td class="cap-cell" data-area="'+area+'" data-puesto="'
+        +f.puesto+'" data-cat="'+cat+'" data-val="'+val+'"'
+        +' style="text-align:center;padding:4px 2px;border-bottom:1px solid #e2e8f0;'
+        +'cursor:pointer;transition:background .15s" '
+        +'title="'+f.puesto+' — '+cat+': '+val+'% (clic para cambiar)">'
+        +_capSvg(val)
+        +'</td>';
+    });
+    tbody += '</tr>';
+  });
+  tbody += '</tbody>';
+
+  return '<div style="overflow-x:auto">'
+    +'<table style="border-collapse:separate;border-spacing:0;width:100%;border:1px solid #e2e8f0;border-radius:10px;overflow:hidden">'
+    +thead+tbody
+    +'</table></div>';
+}
+
+function _capLeyendaNiveles(){
+  var items = CAP_NIVELES.map(function(n){
+    return '<div style="display:flex;align-items:center;gap:10px;margin-bottom:6px">'
+      +'<div style="flex-shrink:0">'+_capSvg(n.val)+'</div>'
+      +'<div style="font-size:.82rem;color:#475569">'
+      +(n.val===0
+        ? 'Personal sin capacitación en el tema.'
+        : '<b style="color:#0f172a">'+n.label.split('—')[0].trim()+'</b>'
+          +' <i>('+n.label.split('—')[1].trim()+')</i>'
+          +': '+_capDescNivel(n.val))
+      +'</div>'
+      +'</div>';
+  }).join('');
+  return '<div style="margin-top:24px;padding:16px 20px;background:#f8fafc;border-radius:12px;border:1px solid #e2e8f0">'
+    +'<div style="font-size:.7rem;font-weight:700;color:#64748b;text-transform:uppercase;letter-spacing:.08em;margin-bottom:10px">Niveles</div>'
+    +items+'</div>';
+}
+
+function _capDescNivel(val){
+  var descs = {
+    25:'El empleado está en un nivel inicial de formación para ejecutar la tarea y requiere supervisión constante.',
+    50:'El empleado puede realizar la tarea con cierta autonomía, pero aún necesita supervisión para garantizar la calidad.',
+    75:'El empleado está capacitado para cumplir la tarea de forma autónoma y cumple con los estándares y tiempos requeridos.',
+    100:'El empleado domina la habilidad y tiene la capacidad de formar y certificar a otros.'
+  };
+  return descs[val]||'';
+}
+
+function _capLeyendaCats(){
+  var keys = Object.keys(CAP_DESC);
+  var items = '';
+  for(var ki=0;ki<keys.length;ki++){
+    var k=keys[ki]; var d=CAP_DESC[k];
+    items += '<div style="display:flex;gap:8px;margin-bottom:5px">'
+      +'<span style="font-weight:800;color:#7B1034;min-width:36px;font-size:.82rem">'+k+'</span>'
+      +'<span style="font-size:.82rem;color:#475569"><b style="color:#0f172a">'+d.label+':</b> <i>'+d.desc+'</i></span>'
+      +'</div>';
+  }
+  return '<div style="margin-top:12px;padding:16px 20px;background:#f8fafc;border-radius:12px;border:1px solid #e2e8f0">'
+    +'<div style="font-size:.7rem;font-weight:700;color:#64748b;text-transform:uppercase;letter-spacing:.08em;margin-bottom:10px">Categorías</div>'
+    +items+'</div>';
+}
+
+function cap_imprimir(){
+  if(!_cap_datos || !_cap_datos.areas) return;
+  var area  = _cap_datos.areas[_cap_areaActiva];
+  var cats  = _cap_datos.cats || [];
+  var filas = (_cap_datos.datos[area]) || [];
+  if(!filas.length) return;
+
+  // ── Tabla para impresión ──────────────────────────────────────────
+  var thead = '<thead><tr>'
+    +'<th style="background:#0f172a;color:white;padding:8px 12px;font-size:9px;font-weight:700;'
+    +'text-align:left;-webkit-print-color-adjust:exact;print-color-adjust:exact;'
+    +'border-right:1px solid #334155">PUESTO</th>'
+    +'<th style="background:#0f172a;color:white;padding:8px 8px;font-size:9px;font-weight:700;'
+    +'text-align:right;white-space:nowrap;-webkit-print-color-adjust:exact;print-color-adjust:exact;'
+    +'border-right:1px solid #334155">SAL. SEM.</th>';
+  cats.forEach(function(cat){
+    thead += '<th style="background:#0f172a;color:white;padding:8px 6px;font-size:9px;font-weight:700;'
+      +'text-align:center;min-width:44px;-webkit-print-color-adjust:exact;print-color-adjust:exact;'
+      +'border-right:1px solid #334155">'+cat+'</th>';
+  });
+  thead += '</tr></thead>';
+
+  function svgP(val){
+    var inner = {
+      0:   '<circle cx="12" cy="12" r="10" fill="white" stroke="#475569" stroke-width="2"/>',
+      25:  '<circle cx="12" cy="12" r="10" fill="white" stroke="#475569" stroke-width="2"/>'
+          +'<path d="M12,12 L12,2 A10,10 0 0,1 22,12 Z" fill="#475569"/>',
+      50:  '<circle cx="12" cy="12" r="10" fill="white" stroke="#475569" stroke-width="2"/>'
+          +'<path d="M12,12 L12,2 A10,10 0 0,1 12,22 Z" fill="#475569"/>',
+      75:  '<circle cx="12" cy="12" r="10" fill="#475569" stroke="#475569" stroke-width="2"/>'
+          +'<path d="M12,12 L12,2 A10,10 0 0,0 2,12 Z" fill="white"/>',
+      100: '<circle cx="12" cy="12" r="10" fill="#475569" stroke="#475569" stroke-width="2"/>'
+    };
+    return '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="22" height="22">'
+      +(inner[val]||inner[0])+'</svg>';
+  }
+
+  var tbody = '<tbody>';
+  for(var ri=0;ri<filas.length;ri++){
+    var f=filas[ri];
+    var bg = ri%2===0 ? '#f8fafc' : '#ffffff';
+    tbody += '<tr style="background:'+bg+';-webkit-print-color-adjust:exact;print-color-adjust:exact">'
+      +'<td style="padding:6px 10px;font-size:9px;font-weight:600;color:#1e293b;'
+      +'border-bottom:1px solid #e2e8f0;border-right:1px solid #e2e8f0;white-space:nowrap">'+f.puesto+'</td>'
+      +'<td style="padding:6px 8px;font-size:9px;font-weight:700;color:#16a34a;'
+      +'border-bottom:1px solid #e2e8f0;border-right:1px solid #e2e8f0;'
+      +'text-align:right;white-space:nowrap">'+(f.salSem||'—')+'</td>';
+    for(var ci=0;ci<cats.length;ci++){
+      var val = f[cats[ci]]||0;
+      tbody += '<td style="text-align:center;padding:3px 2px;border-bottom:1px solid #e2e8f0;'
+        +'border-right:1px solid #e2e8f0">'+svgP(val)+'</td>';
+    }
+    tbody += '</tr>';
+  }
+  tbody += '</tbody>';
+
+  var tablaP = '<table style="border-collapse:collapse;width:100%;border:1.5px solid #0f172a">'
+    +thead+tbody+'</table>';
+
+  // ── Leyenda de niveles ────────────────────────────────────────────
+  var nivelesP = '<div style="display:flex;flex-wrap:wrap;gap:14px;align-items:center;margin-top:10px">';
+  for(var ni=0;ni<CAP_NIVELES.length;ni++){
+    var n=CAP_NIVELES[ni];
+    nivelesP += '<div style="display:flex;align-items:center;gap:5px">'
+      +svgP(n.val)
+      +'<span style="font-size:8px;color:#475569">'
+      +(n.val===0 ? 'Sin capacitación'
+        : '<b>'+n.label.split('—')[0].trim()+'</b>: '+n.label.split('—')[1].trim())
+      +'</span></div>';
+  }
+  nivelesP += '</div>';
+
+  // ── Leyenda de categorías (dos columnas) ─────────────────────────
+  var catKeys = Object.keys(CAP_DESC);
+  var mid = Math.ceil(catKeys.length / 2);
+  function renderColCats(keys){
+    var out='';
+    for(var ci=0;ci<keys.length;ci++){
+      var k=keys[ci]; var d=CAP_DESC[k];
+      out += '<div style="display:flex;gap:6px;margin-bottom:3px">'
+        +'<span style="font-weight:800;color:#7B1034;min-width:30px;font-size:8px">'+k+'</span>'
+        +'<span style="font-size:8px;color:#475569"><b style="color:#0f172a">'+d.label+':</b> '+d.desc+'</span>'
+        +'</div>';
+    }
+    return out;
+  }
+  var catsP = '<div style="display:grid;grid-template-columns:1fr 1fr;gap:0 20px;margin-top:8px">'
+    +'<div>'+renderColCats(catKeys.slice(0,mid))+'</div>'
+    +'<div>'+renderColCats(catKeys.slice(mid))+'</div>'
+    +'</div>';
+
+  // ── Print area ────────────────────────────────────────────────────
+  var printArea = document.getElementById('cap-print-area');
+  if(!printArea){
+    printArea = document.createElement('div');
+    printArea.id = 'cap-print-area';
+    printArea.style.display = 'none';
+    document.body.appendChild(printArea);
+  }
+  var oldSt = document.getElementById('cap-print-style');
+  if(oldSt) oldSt.parentNode.removeChild(oldSt);
+  var st = document.createElement('style');
+  st.id = 'cap-print-style';
+  st.innerHTML =
+    '@media print{'
+    +'body *{visibility:hidden}'
+    +'#cap-print-area,#cap-print-area *{visibility:visible}'
+    +'#cap-print-area{'
+    +'display:block!important;position:absolute;left:0;top:0;'
+    +'width:100%;padding:0;margin:0;box-sizing:border-box;background:white;'
+    +'-webkit-print-color-adjust:exact;print-color-adjust:exact}'
+    +'@page{size:letter portrait;margin:15mm 18mm}}';
+  document.head.appendChild(st);
+
+  var fecha = new Date().toLocaleDateString('es-MX',{year:'numeric',month:'long',day:'numeric'});
+
+  printArea.innerHTML =
+    '<div style="font-family:Arial,sans-serif;width:100%;padding:0 2mm;box-sizing:border-box">'
+    +'<div style="display:flex;align-items:center;justify-content:space-between;'
+    +'border-bottom:3px solid #7B1034;padding-bottom:8px;margin-bottom:12px">'
+    +'<div style="display:flex;align-items:center;gap:12px">'
+    +'<img src="https://www.toolcn.mx/cdn/shop/files/logo_ToolCN_shopify.png?v=1751677238" '
+    +'style="height:40px;object-fit:contain">'
+    +'<div>'
+    +'<div style="font-size:8px;color:#64748b;font-weight:700;text-transform:uppercase;letter-spacing:.1em">Recursos Humanos</div>'
+    +'<div style="font-size:19px;font-weight:900;color:#0f172a;line-height:1.1">MATRIZ DE HABILIDADES</div>'
+    +'<div style="font-size:11px;font-weight:700;color:#7B1034">'+area+'</div>'
+    +'</div>'
+    +'</div>'
+    +'<div style="text-align:right;font-size:8px;color:#94a3b8">'
+    +'<div style="font-weight:700;color:#475569">Fecha de impresión</div>'
+    +'<div>'+fecha+'</div>'
+    +'</div>'
+    +'</div>'
+    +tablaP
+    +'<div style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:8px;'
+    +'padding:8px 12px;margin-top:10px;-webkit-print-color-adjust:exact;print-color-adjust:exact">'
+    +nivelesP+'</div>'
+    +'<div style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:8px;'
+    +'padding:8px 12px;margin-top:6px;-webkit-print-color-adjust:exact;print-color-adjust:exact">'
+    +catsP+'</div>'
+    +'<div style="border-top:1px solid #e2e8f0;padding-top:5px;margin-top:8px;'
+    +'display:flex;justify-content:space-between">'
+    +'<div style="font-size:7px;color:#94a3b8">Sistema de Recursos Humanos — Documento oficial</div>'
+    +'<div style="font-size:7px;color:#94a3b8">'+filas.length+' puestos — '+cats.length+' categorías</div>'
+    +'</div>'
+    +'</div>';
+
+  printArea.style.display = 'block';
+  setTimeout(function(){ window.print(); }, 700);
+  setTimeout(function(){ printArea.style.display = 'none'; }, 6000);
+}
+
+// ══════════════════════════════════════════════════════════════════════
+//  DETALLE DE PUESTO (desde Capacitación) + MÓDULO PERFIL DE PUESTOS
+// ══════════════════════════════════════════════════════════════════════
+var _perfil_datos    = null;
+var _perfil_catActiva = null;
+
+function _capAbrirDetallePuesto(area, puesto){
+  showLoader('Cargando perfil...');
+  google.script.run
+    .withSuccessHandler(function(res){
+      hideLoader();
+      if(!res || typeof res !== 'object'){
+        Swal.fire('Error','No se pudo cargar el perfil (respuesta vacía).\nRevisa la consola de GAS.','error');
+        return;
+      }
+      _perfil_datos     = res;
+      _perfil_catActiva = null;
+      _perfilRenderDetalle(true);
+    })
+    .withFailureHandler(function(e){ hideLoader(); Swal.fire('Error',''+e,'error'); })
+    .obtenerPerfilPuesto(area, puesto);
+}
+
+function _perfilRenderDetalle(desdeCap){
+  var ca  = document.getElementById('content-area');
+  ca._perfilBound = false; // reset para re-bind
+  var d   = _perfil_datos;
+  if(!d){ Swal.fire('Error','No hay datos de perfil cargados.','error'); return; }
+  var cats = ['SEG','CAL','PRO','MAT','LUB','OPE','HER','OPT','COD'];
+
+  // ── Termómetro de salarios (SVG — equidistante, etiquetas 90° abajo) ──
+  var termo = '';
+  if(d.salarios && d.salarios.length){
+    var salPNum = parseInt((d.salPuesto||'').replace(/[$,.\s]/g,''), 10) || 0;
+    var N    = d.salarios.length;
+    var W    = 900;
+    var padL = 30; var padR = 30;
+    var barY = 24; var barH = 40;
+    var labelY = barY + barH + 6;
+    var labelH = 90;
+    var svgH   = barY + barH + labelH + 10;
+    var step   = N > 1 ? (W - padL - padR) / (N - 1) : 0;
+    var svgEl  = '';
+    svgEl += '<defs><linearGradient id="tg2" x1="0" x2="1" y1="0" y2="0">'
+      +'<stop offset="0%" stop-color="#e2e8f0"/>'
+      +'<stop offset="100%" stop-color="#64748b"/>'
+      +'</linearGradient></defs>';
+    svgEl += '<rect x="'+padL+'" y="'+barY+'" width="'+(W-padL-padR)+'" height="'+barH+'" rx="5" fill="url(#tg2)"/>';
+    for(var si=0; si<N; si++){
+      var s     = d.salarios[si];
+      var sNum  = s.num || 0;
+      var esMio = sNum > 0 && sNum === salPNum;
+      var x     = Math.round(padL + si * step);
+      var col   = esMio ? '#dc2626' : '#1e293b';
+      var tickH = esMio ? 30 : 18;
+      var fw    = esMio ? '700' : '400';
+      var fs    = esMio ? 20 : 10;
+      svgEl += '<rect x="'+(x - (esMio?2:1))+'" y="'+(barY - tickH + barH)+'" '
+        +'width="'+(esMio?4:2)+'" height="'+tickH+'" rx="1" fill="'+col+'"/>';
+      svgEl += '<circle cx="'+x+'" cy="'+(barY + barH/2)+'" r="'+(esMio?6:3)+'" fill="'+col+'"/>';
+      svgEl += '<text'
+        +' x="'+x+'"'
+        +' y="'+labelY+'"'
+        +' transform="rotate(90 '+x+' '+labelY+')"'
+        +' font-family="Arial,sans-serif"'
+        +' font-size="'+fs+'"'
+        +' font-weight="'+fw+'"'
+        +' fill="'+col+'"'
+        +' letter-spacing="'+(esMio?'3':'1.5')+'"'
+        +' text-anchor="start">'
+        +s.str
+        +'</text>';
+    }
+    termo =
+      '<div style="margin:10px 0 16px 0">'
+      +'<div style="font-size:.65rem;color:#94a3b8;font-weight:700;text-transform:uppercase;'
+      +'letter-spacing:.06em;margin-bottom:6px">Escala Salarial Semanal</div>'
+      +'<div style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:10px;padding:6px 10px 4px 10px">'
+      +'<svg viewBox="0 0 '+W+' '+svgH+'" width="100%" height="'+svgH+'" xmlns="http://www.w3.org/2000/svg">'
+      +svgEl
+      +'</svg>'
+      +'</div>'
+      +'</div>';
+  }
+
+  // ── Lista de categorías (panel izquierdo) ──
+  var catsList = '';
+  for(var ci=0; ci<cats.length; ci++){
+    var cat = cats[ci];
+    var capData = (_cap_datos && _cap_datos.datos && _cap_datos.datos[d.area]) ?
+      (function(arr,p){ for(var i=0;i<arr.length;i++){ if(arr[i].puesto===p) return arr[i]; } return {}; })(_cap_datos.datos[d.area], d.puesto) : {};
+    var nivel   = capData[cat] || 0;
+    var desc    = (CAP_DESC[cat]||{}).label || cat;
+    var activo  = _perfil_catActiva === cat;
+    catsList += '<div class="perfil-cat-item" data-cat="'+cat+'"'
+      +' style="display:flex;align-items:center;gap:10px;padding:9px 12px;'
+      +'border-radius:10px;margin-bottom:4px;cursor:pointer;'
+      +'background:'+(activo?'#fff7ed':'#f8fafc')+';'
+      +'border:2px solid '+(activo?'#7B1034':'#e2e8f0')+';'
+      +'transition:all .15s">'
+      +'<div style="flex-shrink:0">'+_capSvg(nivel)+'</div>'
+      +'<div>'
+      +'<div style="font-size:.78rem;font-weight:700;color:'+(activo?'#7B1034':'#0f172a')+'">'+cat
+        +' <span style="font-weight:400;color:#64748b;font-size:.72rem">— '+desc+'</span></div>'
+      +'</div>'
+      +'</div>';
+  }
+
+  var panelDer = _perfil_catActiva
+    ? _perfilPanelDerHtml(_perfil_catActiva)
+    : '<div style="display:flex;flex-direction:column;align-items:center;justify-content:center;height:100%;min-height:300px;color:#94a3b8;text-align:center">'
+      +'<i class="fas fa-hand-pointer" style="font-size:2.5rem;margin-bottom:12px;opacity:.3"></i>'
+      +'<div style="font-size:.9rem">Selecciona una categoría<br>para ver y editar su detalle</div>'
+      +'</div>';
+
+  ca.innerHTML =
+    '<div class="card-pro" style="padding:20px 24px">'
+    +'<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px;flex-wrap:wrap;gap:10px">'
+    +'<div style="display:flex;align-items:center;gap:12px">'
+    +(desdeCap
+      ? '<button id="perfil-btn-volver" style="background:#f1f5f9;border:2px solid #e2e8f0;border-radius:10px;'
+        +'padding:7px 14px;font-size:.82rem;font-weight:700;cursor:pointer;color:#475569">'
+        +'<i class="fas fa-arrow-left me-1"></i>Capacitación</button>'
+      : '<button id="perfil-btn-volver" style="background:#f1f5f9;border:2px solid #e2e8f0;border-radius:10px;'
+        +'padding:7px 14px;font-size:.82rem;font-weight:700;cursor:pointer;color:#475569">'
+        +'<i class="fas fa-arrow-left me-1"></i>Perfiles</button>')
+    +'<div>'
+    +'<div style="font-size:.65rem;color:#94a3b8;font-weight:700;text-transform:uppercase">'+d.area+'</div>'
+    +'<div style="font-size:1.2rem;font-weight:900;color:#0f172a">'+d.puesto+'</div>'
+    +'</div>'
+    +'</div>'
+    +'<button id="perfil-btn-imprimir" style="background:#7B1034;color:white;border:none;border-radius:10px;'
+    +'padding:9px 18px;font-size:.85rem;font-weight:700;cursor:pointer;'
+    +'display:flex;align-items:center;gap:7px;box-shadow:0 2px 8px rgba(123,16,52,.3)">'
+    +'🖨️ Imprimir Perfil</button>'
+    +'</div>'
+    +termo
+    +'<div style="margin-bottom:16px">'
+    +'<label style="font-size:.72rem;font-weight:700;color:#64748b;text-transform:uppercase;letter-spacing:.06em">Objetivo del Puesto</label>'
+    +'<textarea id="perfil-obj-puesto" rows="2" class="form-control form-control-sm" style="margin-top:4px;resize:none" '
+    +'placeholder="Describe el objetivo general del puesto...">'+_esc(d.objetivoPuesto)+'</textarea>'
+    +'</div>'
+    +'<div style="display:grid;grid-template-columns:300px 1fr;gap:16px;align-items:start">'
+    +'<div>'
+    +'<div style="font-size:.7rem;font-weight:700;color:#64748b;text-transform:uppercase;letter-spacing:.06em;margin-bottom:8px">Categorías</div>'
+    +catsList
+    +'</div>'
+    +'<div id="perfil-panel-der" style="background:#f8fafc;border-radius:12px;border:1px solid #e2e8f0;padding:16px;min-height:340px">'
+    +panelDer
+    +'</div>'
+    +'</div>'
+    +'</div>';
+
+  // Eliminar listener anterior si existe y registrar uno nuevo limpio
+  if(ca._perfilHandler) ca.removeEventListener('click', ca._perfilHandler);
+  ca._perfilHandler = function(e){
+    if(e.target.closest('#perfil-btn-volver')){
+      if(desdeCap) _capRender(); else loadPerfilesPuestos();
+      return;
+    }
+    if(e.target.closest('#perfil-btn-imprimir')){ _perfilImprimir(); return; }
+    if(e.target.closest('#perfil-btn-guardar-cat')){ _perfilGuardarCat(); return; }
+    if(e.target.closest('#perfil-btn-print-adj')){
+      var url = (_perfil_datos.cats[_perfil_catActiva]||{}).urlAdjunto;
+      if(url) window.open(url,'_blank');
+      return;
+    }
+    if(e.target.closest('#perfil-adj-label')){
+      document.getElementById('perfil-file-input').click();
+      return;
+    }
+    if(e.target.closest('#perfil-btn-add-tarea')){ _perfilAddTarea(); return; }
+    var delBtn = e.target.closest('.perfil-del-tarea');
+    if(delBtn){ _perfilDelTarea(parseInt(delBtn.getAttribute('data-idx'),10)); return; }
+    var catItem = e.target.closest('.perfil-cat-item');
+    if(catItem){
+      _perfil_catActiva = catItem.getAttribute('data-cat');
+      var objEl = document.getElementById('perfil-obj-puesto');
+      if(objEl) _perfil_datos.objetivoPuesto = objEl.value;
+      document.querySelectorAll('.perfil-cat-item').forEach(function(el){
+        var act = el.getAttribute('data-cat') === _perfil_catActiva;
+        el.style.background  = act ? '#fff7ed' : '#f8fafc';
+        el.style.borderColor = act ? '#7B1034' : '#e2e8f0';
+        el.querySelector('div div').style.color = act ? '#7B1034' : '#0f172a';
+      });
+      document.getElementById('perfil-panel-der').innerHTML = _perfilPanelDerHtml(_perfil_catActiva);
+      return;
+    }
+  };
+  ca.addEventListener('click', ca._perfilHandler);
+
+  // Subida de archivo adjunto del perfil
+  if(ca._perfilFileHandler) ca.removeEventListener('change', ca._perfilFileHandler);
+  ca._perfilFileHandler = function(e){
+    var fi = e.target.closest('#perfil-file-input');
+    if(!fi || !fi.files[0]) return;
+    var file = fi.files[0];
+    var cat  = _perfil_catActiva;
+    if(!cat) return;
+    var reader = new FileReader();
+    reader.onload = function(ev2){
+      var b64 = ev2.target.result.split(',')[1];
+      toggleSaving(true,'Subiendo archivo...');
+      google.script.run
+        .withSuccessHandler(function(url){
+          toggleSaving(false);
+          if(!_perfil_datos.cats[cat]) _perfil_datos.cats[cat] = { objetivo:'', metodo:'', tareas:[] };
+          _perfil_datos.cats[cat].urlAdjunto = url;
+          // Guardar url en Sheets
+          google.script.run
+            .withSuccessHandler(function(){ rhAlert('success','Archivo subido','Adjunto guardado en el perfil.',2000); })
+            .withFailureHandler(function(err){ Swal.fire('Error',''+err,'error'); })
+            .guardarAdjuntoPerfil(_perfil_datos.area, _perfil_datos.puesto, cat, url);
+          // Re-render panel
+          document.getElementById('perfil-panel-der').innerHTML = _perfilPanelDerHtml(_perfil_catActiva);
+        })
+        .withFailureHandler(function(err){ toggleSaving(false); Swal.fire('Error',''+err,'error'); })
+        .subirAdjuntoEvaluacion(b64, file.name, file.type);
+    };
+    reader.readAsDataURL(file);
+  };
+  ca.addEventListener('change', ca._perfilFileHandler);
+}
+
+function _perfilPanelDerHtml(cat){
+  var d    = _perfil_datos;
+  var info = (d.cats && d.cats[cat]) || { objetivo:'', metodo:'', tareas:[] };
+  var desc = (CAP_DESC[cat]||{});
+
+  var tareasHtml = '';
+  var tareas = info.tareas || [];
+  for(var ti=0; ti<tareas.length; ti++){
+    tareasHtml += '<div class="perfil-tarea-row" style="display:flex;align-items:center;gap:8px;margin-bottom:6px">'
+      +'<span style="flex-shrink:0;width:20px;height:20px;background:#7B1034;border-radius:50%;'
+      +'display:flex;align-items:center;justify-content:center;font-size:.65rem;font-weight:900;color:white">'+(ti+1)+'</span>'
+      +'<input class="form-control form-control-sm perfil-tarea-input" data-idx="'+ti+'" '
+      +'value="'+_esc(tareas[ti])+'" placeholder="Describe la tarea..." style="flex:1">'
+      +'<button class="perfil-del-tarea" data-idx="'+ti+'"'
+      +' style="flex-shrink:0;background:#fee2e2;border:none;border-radius:8px;'
+      +'width:28px;height:28px;color:#dc2626;cursor:pointer;font-size:.8rem">✕</button>'
+      +'</div>';
+  }
+
+  return '<div style="height:100%">'
+    +'<div style="display:flex;align-items:center;gap:8px;margin-bottom:14px">'
+    +'<span style="font-size:1rem;font-weight:900;color:#7B1034">'+cat+'</span>'
+    +'<span style="font-size:.82rem;color:#64748b">— '+(desc.label||cat)+'</span>'
+    +'</div>'
+    +'<div style="font-size:.75rem;font-style:italic;color:#94a3b8;margin-bottom:14px;'
+    +'padding:8px 10px;background:white;border-radius:8px;border:1px solid #e2e8f0">'
+    +(desc.desc||'')+'</div>'
+    +'<div style="margin-bottom:12px">'
+    +'<label style="font-size:.72rem;font-weight:700;color:#64748b;text-transform:uppercase;letter-spacing:.06em">Objetivo</label>'
+    +'<textarea id="perfil-obj-cat" rows="2" class="form-control form-control-sm" style="margin-top:4px;resize:none" '
+    +'placeholder="Objetivo de esta categoría para el puesto...">'+_esc(info.objetivo)+'</textarea>'
+    +'</div>'
+    +'<div style="margin-bottom:12px">'
+    +'<label style="font-size:.72rem;font-weight:700;color:#64748b;text-transform:uppercase;letter-spacing:.06em">Método de Evaluación</label>'
+    +'<textarea id="perfil-metodo" rows="2" class="form-control form-control-sm" style="margin-top:4px;resize:none" '
+    +'placeholder="Cómo se evalúa esta categoría...">'+_esc(info.metodo)+'</textarea>'
+    +'</div>'
+    +'<div style="margin-bottom:10px">'
+    +'<label style="font-size:.72rem;font-weight:700;color:#64748b;text-transform:uppercase;letter-spacing:.06em">Tareas a Evaluar</label>'
+    +'<div id="perfil-tareas-wrap" style="margin-top:6px">'+tareasHtml+'</div>'
+    +'<button id="perfil-btn-add-tarea" style="margin-top:6px;background:#f1f5f9;border:2px dashed #cbd5e1;'
+    +'border-radius:8px;padding:5px 12px;font-size:.78rem;font-weight:600;color:#475569;cursor:pointer;width:100%">'
+    +'<i class="fas fa-plus me-1"></i>Añadir tarea</button>'
+    +'</div>'
+    // Adjunto
+    +'<div style="margin-top:14px;padding:10px 12px;background:#f8fafc;border:1px solid #e2e8f0;border-radius:10px">'
+    +'<div style="font-size:.7rem;font-weight:700;color:#64748b;text-transform:uppercase;letter-spacing:.06em;margin-bottom:8px">'
+    +'<i class="fas fa-paperclip me-1"></i>Archivo guía de evaluación</div>'
+    +(info.urlAdjunto
+      ? '<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:8px">'
+        +'<a href="'+_esc(info.urlAdjunto)+'" target="_blank" style="font-size:.8rem;color:#2563eb;text-decoration:underline;flex:1">'
+        +'<i class="fas fa-file me-1"></i>Ver archivo actual</a>'
+        +'<button id="perfil-btn-print-adj" style="background:#f1f5f9;border:1px solid #e2e8f0;border-radius:8px;padding:4px 10px;font-size:.72rem;font-weight:600;cursor:pointer;color:#475569">'
+        +'<i class="fas fa-print me-1"></i>Imprimir</button>'
+        +'</div>'
+      : '<div style="font-size:.78rem;color:#94a3b8;margin-bottom:8px"><i class="fas fa-ban me-1"></i>Sin adjunto</div>')
+    +'<label id="perfil-adj-label" style="display:inline-flex;align-items:center;gap:6px;background:white;border:2px dashed #cbd5e1;'
+    +'border-radius:8px;padding:6px 14px;font-size:.75rem;font-weight:600;color:#475569;cursor:pointer">'
+    +'<i class="fas fa-upload"></i>'+(info.urlAdjunto ? 'Reemplazar archivo' : 'Subir archivo')
+    +'<input id="perfil-file-input" type="file" style="display:none" accept=".pdf,.jpg,.jpeg,.png"></label>'
+    +'</div>'
+    +'<div style="display:flex;justify-content:flex-end;margin-top:12px">'
+    +'<button id="perfil-btn-guardar-cat" style="background:#7B1034;color:white;border:none;'
+    +'border-radius:10px;padding:8px 20px;font-size:.85rem;font-weight:700;cursor:pointer">'
+    +'<i class="fas fa-save me-1"></i>Guardar</button>'
+    +'</div>'
+    +'</div>';
+}
+
+function _perfilGetTareasActuales(){
+  var inputs = document.querySelectorAll('.perfil-tarea-input');
+  var tareas = [];
+  for(var i=0; i<inputs.length; i++){
+    var v = inputs[i].value.trim();
+    if(v) tareas.push(v);
+  }
+  return tareas;
+}
+function _perfilAddTarea(){
+  var wrap   = document.getElementById('perfil-tareas-wrap');
+  var inputs = wrap.querySelectorAll('.perfil-tarea-input');
+  var idx    = inputs.length;
+  var div    = document.createElement('div');
+  div.className = 'perfil-tarea-row';
+  div.style.cssText = 'display:flex;align-items:center;gap:8px;margin-bottom:6px';
+  div.innerHTML =
+    '<span style="flex-shrink:0;width:20px;height:20px;background:#7B1034;border-radius:50%;'
+    +'display:flex;align-items:center;justify-content:center;font-size:.65rem;font-weight:900;color:white">'+(idx+1)+'</span>'
+    +'<input class="form-control form-control-sm perfil-tarea-input" data-idx="'+idx+'" '
+    +'placeholder="Describe la tarea..." style="flex:1">'
+    +'<button class="perfil-del-tarea" data-idx="'+idx+'"'
+    +' style="flex-shrink:0;background:#fee2e2;border:none;border-radius:8px;'
+    +'width:28px;height:28px;color:#dc2626;cursor:pointer;font-size:.8rem">✕</button>';
+  wrap.appendChild(div);
+  div.querySelector('input').focus();
+}
+function _perfilDelTarea(idx){
+  var inputs = document.querySelectorAll('.perfil-tarea-input');
+  if(inputs[idx]) inputs[idx].closest('.perfil-tarea-row').remove();
+  document.querySelectorAll('.perfil-tarea-row').forEach(function(row, i){
+    var badge = row.querySelector('span');
+    if(badge) badge.textContent = i+1;
+    var inp = row.querySelector('.perfil-tarea-input');
+    if(inp) inp.setAttribute('data-idx', i);
+    var del = row.querySelector('.perfil-del-tarea');
+    if(del) del.setAttribute('data-idx', i);
+  });
+}
+
+function _perfilGuardarCat(){
+  if(!_perfil_catActiva) return;
+  var d         = _perfil_datos;
+  var objPuesto = document.getElementById('perfil-obj-puesto').value.trim();
+  var objCat    = (document.getElementById('perfil-obj-cat')||{value:''}).value||'';
+  var metodo    = (document.getElementById('perfil-metodo')||{value:''}).value||'';
+  var tareas    = _perfilGetTareasActuales();
+
+  d.objetivoPuesto = objPuesto;
+  if(!d.cats) d.cats = {};
+  d.cats[_perfil_catActiva] = { objetivo:objCat.trim(), metodo:metodo.trim(), tareas:tareas };
+
+  toggleSaving(true,'Guardando...');
+  google.script.run
+    .withSuccessHandler(function(r){
+      toggleSaving(false);
+      if(r==='OK') rhAlert('success','Guardado','Perfil actualizado.',1800);
+      else Swal.fire('Error',r,'error');
+    })
+    .withFailureHandler(function(e){ toggleSaving(false); Swal.fire('Error',''+e,'error'); })
+    .guardarPerfilPuesto(d.area, d.puesto, objPuesto, _perfil_catActiva, objCat.trim(), metodo.trim(), tareas);
+}
+
+function _esc(s){
+  return String(s||'').replace(/&/g,'&amp;').replace(/"/g,'&quot;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+}
+
+function _perfilImprimir(){
+  // Si el tabulador no está cargado, cargarlo primero y luego imprimir
+  if(!_tab_datos || !_tab_datos.datos || !_tab_datos.datos.length){
+    showLoader('Preparando impresión...');
+    google.script.run
+      .withSuccessHandler(function(res){
+        hideLoader();
+        _tab_datos = res;
+        _perfilImprimirEjecutar();
+      })
+      .withFailureHandler(function(e){
+        hideLoader();
+        // Imprimir sin escalera si falla
+        _perfilImprimirEjecutar();
+      })
+      .obtenerTabulador();
+    return;
+  }
+  _perfilImprimirEjecutar();
+}
+
+function _perfilImprimirEjecutar(){
+  var d    = _perfil_datos;
+  var cats = ['SEG','CAL','PRO','MAT','LUB','OPE','HER','OPT','COD'];
+  var fecha = new Date().toLocaleDateString('es-MX',{year:'numeric',month:'long',day:'numeric'});
+
+  var capFila = {};
+  if(_cap_datos && _cap_datos.datos && _cap_datos.datos[d.area]){
+    var arr = _cap_datos.datos[d.area];
+    for(var ai=0; ai<arr.length; ai++){
+      if(arr[ai].puesto===d.puesto){ capFila=arr[ai]; break; }
+    }
+  }
+
+  function svgPrint(val){
+    var inner={
+      0:  '<circle cx="12" cy="12" r="10" fill="white" stroke="#475569" stroke-width="2"/>',
+      25: '<circle cx="12" cy="12" r="10" fill="white" stroke="#475569" stroke-width="2"/><path d="M12,12 L12,2 A10,10 0 0,1 22,12 Z" fill="#475569"/>',
+      50: '<circle cx="12" cy="12" r="10" fill="white" stroke="#475569" stroke-width="2"/><path d="M12,12 L12,2 A10,10 0 0,1 12,22 Z" fill="#475569"/>',
+      75: '<circle cx="12" cy="12" r="10" fill="#475569" stroke="#475569" stroke-width="2"/><path d="M12,12 L12,2 A10,10 0 0,0 2,12 Z" fill="white"/>',
+      100:'<circle cx="12" cy="12" r="10" fill="#475569" stroke="#475569" stroke-width="2"/>'
+    };
+    return '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="20" height="20">'+(inner[val]||inner[0])+'</svg>';
+  }
+
+  var catsHtml = '';
+  for(var ci=0; ci<cats.length; ci++){
+    var cat  = cats[ci];
+    var info = (d.cats && d.cats[cat]) || { objetivo:'', metodo:'', tareas:[] };
+    var desc = (CAP_DESC[cat]||{});
+    var nivel = capFila[cat] || 0;
+    var nivelLabel = '';
+    for(var ni=0; ni<CAP_NIVELES.length; ni++){ if(CAP_NIVELES[ni].val===nivel){ nivelLabel=CAP_NIVELES[ni].label; break; } }
+    if(!info.objetivo && !info.metodo && (!info.tareas||!info.tareas.length)) continue;
+
+    var tareasHtml = '';
+    if(info.tareas && info.tareas.length){
+      for(var ti=0; ti<info.tareas.length; ti++){
+        tareasHtml += '<div style="display:flex;gap:6px;margin-bottom:3px;font-size:9px;color:#334155">'
+          +'<span style="flex-shrink:0;color:#7B1034;font-weight:700">'+(ti+1)+'.</span>'
+          +'<span>'+info.tareas[ti]+'</span></div>';
+      }
+    }
+
+    catsHtml +=
+      '<div style="margin-bottom:14px;padding:10px 12px;border:1px solid #e2e8f0;border-radius:8px;'
+      +'border-left:4px solid #7B1034;-webkit-print-color-adjust:exact;print-color-adjust:exact">'
+      +'<div style="display:flex;align-items:center;gap:8px;margin-bottom:6px">'
+      +svgPrint(nivel)
+      +'<span style="font-size:11px;font-weight:900;color:#7B1034">'+cat+'</span>'
+      +'<span style="font-size:10px;font-weight:700;color:#0f172a">'+desc.label+'</span>'
+      +'<span style="font-size:9px;color:#64748b;margin-left:auto">Nivel requerido: <b>'+nivelLabel+'</b></span>'
+      +'</div>'
+      +(info.objetivo?'<div style="margin-bottom:5px"><span style="font-size:8px;font-weight:700;color:#475569;text-transform:uppercase">Objetivo: </span><span style="font-size:9px;color:#334155">'+info.objetivo+'</span></div>':'')
+      +(info.metodo?'<div style="margin-bottom:5px"><span style="font-size:8px;font-weight:700;color:#475569;text-transform:uppercase">Método de evaluación: </span><span style="font-size:9px;color:#334155">'+info.metodo+'</span></div>':'')
+      +(tareasHtml?'<div><span style="font-size:8px;font-weight:700;color:#475569;text-transform:uppercase">Tareas a evaluar:</span><div style="margin-top:3px">'+tareasHtml+'</div></div>':'')
+      +'</div>';
+  }
+
+  var printArea = document.getElementById('perf-print-area');
+  if(!printArea){
+    printArea = document.createElement('div');
+    printArea.id = 'perf-print-area';
+    printArea.style.display = 'none';
+    document.body.appendChild(printArea);
+  }
+  var oldSt = document.getElementById('perf-print-style');
+  if(oldSt) oldSt.parentNode.removeChild(oldSt);
+  var st = document.createElement('style');
+  st.id = 'perf-print-style';
+  st.innerHTML =
+    '@media print{'
+    +'body *{visibility:hidden}'
+    +'#perf-print-area,#perf-print-area *{visibility:visible}'
+    +'#perf-print-area{display:block!important;position:absolute;left:0;top:0;'
+    +'width:100%;padding:0;margin:0;box-sizing:border-box;background:white;'
+    +'-webkit-print-color-adjust:exact;print-color-adjust:exact}'
+    +'@page{size:letter portrait;margin:12mm 14mm}}';
+  document.head.appendChild(st);
+
+  printArea.innerHTML =
+    '<div style="font-family:Arial,sans-serif;width:100%;padding:0 2mm;box-sizing:border-box">'
+    +'<div style="display:flex;align-items:center;justify-content:space-between;'
+    +'border-bottom:3px solid #7B1034;padding-bottom:8px;margin-bottom:14px;'
+    +'-webkit-print-color-adjust:exact;print-color-adjust:exact">'
+    +'<div style="display:flex;align-items:center;gap:12px">'
+    +'<img src="https://www.toolcn.mx/cdn/shop/files/logo_ToolCN_shopify.png?v=1751677238" style="height:40px;object-fit:contain">'
+    +'<div>'
+    +'<div style="font-size:8px;color:#64748b;font-weight:700;text-transform:uppercase;letter-spacing:.1em">Recursos Humanos</div>'
+    +'<div style="font-size:18px;font-weight:900;color:#0f172a;line-height:1.1">PERFIL DE PUESTO</div>'
+    +'<div style="font-size:10px;font-weight:700;color:#7B1034">'+d.area+' — '+d.puesto+'</div>'
+    +'</div>'
+    +'</div>'
+    +'<div style="text-align:right;font-size:8px;color:#94a3b8">'
+    +'<div style="font-weight:700;color:#475569">Fecha de emisión</div>'
+    +'<div>'+fecha+'</div>'
+    +'</div>'
+    +'</div>'
+    +(d.salarios && d.salarios.length ? (function(){
+      var salPNumP = parseInt((d.salPuesto||'').replace(/[$,.\s]/g,''), 10) || 0;
+      var NP = d.salarios.length;
+      var WP = 700; var padLP = 30; var padRP = 30;
+      var barYP = 24; var barHP = 16;
+      var labelYP = barYP + barHP + 4;
+      var svgHP = barYP + barHP + 80;
+      var stepP = NP > 1 ? (WP - padLP - padRP) / (NP - 1) : 0;
+      var svgP  = '';
+      svgP += '<defs><linearGradient id="tgp" x1="0" x2="1" y1="0" y2="0">'
+        +'<stop offset="0%" stop-color="#e2e8f0"/>'
+        +'<stop offset="100%" stop-color="#64748b"/>'
+        +'</linearGradient></defs>';
+      svgP += '<rect x="'+padLP+'" y="'+barYP+'" width="'+(WP-padLP-padRP)+'" height="'+barHP+'" rx="4" fill="url(#tgp)" style="-webkit-print-color-adjust:exact;print-color-adjust:exact"/>';
+      for(var sip=0; sip<NP; sip++){
+        var sp    = d.salarios[sip];
+        var sNumP = sp.num || 0;
+        var esP   = sNumP > 0 && sNumP === salPNumP;
+        var xp    = Math.round(padLP + sip * stepP);
+        var colP  = esP ? '#dc2626' : '#1e293b';
+        var tickHP= esP ? 16 : 10;
+        var fwP   = esP ? '700' : '400';
+        var fsP   = esP ? 11 : 7;
+        var lsP   = esP ? '2' : '0.5';
+        svgP += '<rect x="'+(xp-(esP?2:1))+'" y="'+(barYP-tickHP+barHP)+'" width="'+(esP?4:2)+'" height="'+tickHP+'" rx="1" fill="'+colP+'" style="-webkit-print-color-adjust:exact;print-color-adjust:exact"/>';
+        svgP += '<circle cx="'+xp+'" cy="'+(barYP+barHP/2)+'" r="'+(esP?5:2)+'" fill="'+colP+'" style="-webkit-print-color-adjust:exact;print-color-adjust:exact"/>';
+        svgP += '<text x="'+xp+'" y="'+labelYP+'" transform="rotate(90 '+xp+' '+labelYP+')" '
+          +'font-family="Arial,sans-serif" font-size="'+fsP+'" font-weight="'+fwP+'" '
+          +'fill="'+colP+'" letter-spacing="'+lsP+'" text-anchor="start">'+sp.str+'</text>';
+      }
+      return '<div style="margin-bottom:10px;-webkit-print-color-adjust:exact;print-color-adjust:exact">'
+        +'<div style="font-size:7px;color:#64748b;font-weight:700;text-transform:uppercase;'
+        +'letter-spacing:.08em;margin-bottom:4px">Escala Salarial Semanal</div>'
+        +'<div style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:8px;padding:4px 8px;'
+        +'-webkit-print-color-adjust:exact;print-color-adjust:exact">'
+        +'<svg viewBox="0 0 '+WP+' '+svgHP+'" width="100%" height="'+svgHP+'" xmlns="http://www.w3.org/2000/svg">'
+        +svgP+'</svg></div></div>';
+    })() : '')
+    +(d.salPuesto?'<div style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:8px;padding:8px 12px;'
+      +'margin-bottom:10px;display:flex;align-items:center;gap:10px;'
+      +'-webkit-print-color-adjust:exact;print-color-adjust:exact">'
+      +'<span style="font-size:9px;color:#64748b;font-weight:700">SALARIO SEMANAL:</span>'
+      +'<span style="font-size:13px;font-weight:900;color:#16a34a">'+d.salPuesto+'</span>'
+      +'</div>':'')
+    +(function(){
+      // ── Escalera del tabulador para el PDF del perfil ──
+      if(!_tab_datos || !_tab_datos.datos || !_tab_datos.datos.length) return '';
+      // Buscar en qué categoría/escalón está el puesto
+      var escalones = null;
+      var escalonIdx = -1; // índice 0-based del escalón donde está el puesto
+      for(var ci2=0; ci2<_tab_datos.datos.length; ci2++){
+        var esc2 = _tab_datos.datos[ci2].escalones||[];
+        for(var ei2=0; ei2<esc2.length; ei2++){
+          var nombres2 = esc2[ei2].base.map(function(b){return b.nombre.toUpperCase();});
+          if(nombres2.indexOf(d.puesto.toUpperCase())!==-1){
+            escalones = esc2; escalonIdx = ei2; break;
+          }
+          // También revisar plus
+          if(esc2[ei2].plus){
+            var nombresP2 = esc2[ei2].plus.map(function(b){return b.nombre.toUpperCase();});
+            if(nombresP2.indexOf(d.puesto.toUpperCase())!==-1){
+              escalones = esc2; escalonIdx = ei2; break;
+            }
+          }
+        }
+        if(escalones) break;
+      }
+      if(!escalones || !escalones.length) return '';
+      var NE = escalones.length;
+      var SW2 = 120; var SH2 = 52;
+      var palette2 = ['#4A2C0A','#5C3A1E','#6B4423','#7A4F29','#8B5A2B','#9C6530','#A87040','#B47D50','#BE8B60','#C89870'];
+      var MONITO_W2 = 36;
+      // El monito va sobre el escalón del puesto (escalonIdx)
+      // En flex-column-reverse: el escalón 0 (i=0) tiene margin-left=0 (visual: abajo-izquierda)
+      // El escalón i tiene margin-left = i*SW2 desde la izquierda
+      var moniLeft2 = Math.round(escalonIdx * SW2 + SW2/2 - MONITO_W2/2);
+      var stepsHtml2 = '';
+      escalones.forEach(function(esc3, i3){
+        var color3    = palette2[Math.min(i3, palette2.length-1)];
+        var mLeft3    = i3 * SW2;
+        var baseN3    = esc3.base.map(function(b){return b.nombre;}).join(' / ');
+        var sal3      = esc3.base.length ? esc3.base[0].salario : '';
+        var esMio3    = (i3 === escalonIdx);
+        var plusH3    = '';
+        if(esc3.plus && esc3.plus.length){
+          plusH3 = '<div style="display:flex;align-items:center;flex-wrap:wrap;gap:3px;padding:0 5px">'
+            +'<span style="color:#7B1034;font-size:9px;font-weight:900">&#8594;</span>';
+          esc3.plus.forEach(function(p3){
+            var esPlusM = p3.nombre.toUpperCase()===d.puesto.toUpperCase();
+            plusH3 += '<div style="border:1.5px solid '+(esPlusM?'#dc2626':'#7B1034')+';border-radius:8px;'
+              +'padding:2px 7px;font-size:7px;white-space:nowrap;background:'+(esPlusM?'#fee2e2':'white')+';'
+              +'-webkit-print-color-adjust:exact;print-color-adjust:exact">'
+              +'<b style="color:'+(esPlusM?'#dc2626':'#0f172a')+'">'+p3.nombre+'</b>'
+              +' <span style="color:#7B1034;font-weight:900">'+p3.salario+'</span></div>';
+          });
+          plusH3 += '</div>';
+        }
+        stepsHtml2 +=
+          '<div style="display:flex;align-items:center;margin-left:'+mLeft3+'px;margin-bottom:2px">'
+          +'<div style="background:'+color3+';min-height:'+SH2+'px;min-width:'+SW2+'px;'
+          +'border-radius:6px 6px 0 0;padding:6px 10px;display:flex;align-items:center;gap:7px;flex-shrink:0;'
+          +(esMio3?'outline:3px solid #dc2626;outline-offset:1px;':'')
+          +'box-shadow:0 2px 6px rgba(0,0,0,.22);'
+          +'-webkit-print-color-adjust:exact;print-color-adjust:exact">'
+          +'<div style="flex-shrink:0;width:22px;height:22px;border-radius:50%;'
+          +'background:rgba(0,0,0,.28);display:flex;align-items:center;justify-content:center;'
+          +'font-size:8px;font-weight:900;color:#fff;-webkit-print-color-adjust:exact;print-color-adjust:exact">'+(i3+1)+'</div>'
+          +'<div style="min-width:0">'
+          +'<div style="font-size:7px;font-weight:700;color:rgba(255,255,255,.9);'
+          +'white-space:normal;word-break:break-word;line-height:1.2;max-width:'+(SW2-50)+'px">'+baseN3+'</div>'
+          +'<div style="font-size:9px;font-weight:900;color:#fff;margin-top:2px">'+sal3+'</div>'
+          +'</div>'
+          +'</div>'
+          +plusH3
+          +'</div>';
+      });
+      var totalW2 = NE * SW2 + 300;
+      var alturaEsc2 = NE * SH2 + 60;
+      var areaAncho2 = 680; // ancho útil del PDF portrait en px aprox
+      var escala2 = Math.min(1.5, Math.max(0.25, Math.round((areaAncho2/totalW2)*100)/100));
+      return '<div style="margin-bottom:10px;-webkit-print-color-adjust:exact;print-color-adjust:exact">'
+        +'<div style="font-size:7px;color:#64748b;font-weight:700;text-transform:uppercase;'
+        +'letter-spacing:.08em;margin-bottom:4px">Posición en escalera salarial</div>'
+        +'<div style="background:#fff8f0;border:1px solid #fed7aa;border-radius:8px;padding:6px 8px;overflow:hidden;'
+        +'-webkit-print-color-adjust:exact;print-color-adjust:exact">'
+        +'<div style="position:relative;padding-top:'+(MONITO_W2+12)+'px;min-width:'+totalW2+'px;'
+        +'transform-origin:top left;transform:scale('+escala2+');'
+        +'margin-bottom:'+(Math.round((NE*SH2+MONITO_W2+20)*escala2)-(NE*SH2+MONITO_W2+20)+16)+'px">'
+        +'<img src="https://media.licdn.com/dms/image/v2/D4E05AQFY6Jdpb5aQ2Q/videocover-high/B4EZlO0BzqIUB8-/0/1757963888527?e=2147483647&v=beta&t=NlqR1mtmHwJFGLGhUiW0vxCcvhwqw-pqQtHhOr5QqDQ"'
+        +' style="position:absolute;bottom:'+(SH2 * (escalonIdx + 1))+'px;left:'+moniLeft2+'px;width:'+MONITO_W2+'px;'
+        +'pointer-events:none;z-index:10" alt="escalando">'
+        +'<div style="display:flex;flex-direction:column-reverse;align-items:flex-start">'
+        +stepsHtml2
+        +'</div>'
+        +'</div>'
+        +'<div style="font-size:6px;color:#94a3b8;text-align:center;margin-top:2px">'
+        +'Escalón '+(escalonIdx+1)+' de '+NE+' — '+d.puesto
+        +'</div>'
+        +'</div>'
+        +'</div>';
+    })()
+    +(d.objetivoPuesto?'<div style="margin-bottom:12px;padding:8px 12px;background:#fff7ed;'
+      +'border:1px solid #fed7aa;border-radius:8px;'
+      +'-webkit-print-color-adjust:exact;print-color-adjust:exact">'
+      +'<div style="font-size:8px;font-weight:700;color:#9a3412;text-transform:uppercase;margin-bottom:3px">Objetivo del Puesto</div>'
+      +'<div style="font-size:10px;color:#334155">'+d.objetivoPuesto+'</div>'
+      +'</div>':'')
+    +catsHtml
+    +'<div style="border-top:1px solid #e2e8f0;padding-top:5px;margin-top:8px;'
+    +'display:flex;justify-content:space-between">'
+    +'<div style="font-size:7px;color:#94a3b8">Sistema de Recursos Humanos — Documento oficial</div>'
+    +'<div style="font-size:7px;color:#94a3b8">'+d.puesto+' — '+d.area+'</div>'
+    +'</div>'
+    +'</div>';
+
+  printArea.style.display = 'block';
+  setTimeout(function(){ window.print(); }, 700);
+  setTimeout(function(){ printArea.style.display = 'none'; }, 6000);
+}
+
+// ══════════════════════════════════════════════════════════════════════
+//  MÓDULO: PERFIL DE PUESTOS (vista general)
+// ══════════════════════════════════════════════════════════════════════

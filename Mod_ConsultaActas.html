@@ -1,0 +1,466 @@
+function loadConsultaActas(){
+  showLoader('Cargando actas...');
+  google.script.run
+    .withSuccessHandler(function(actas){hideLoader();renderConsultaActas(actas||[]);})
+    .withFailureHandler(function(e){hideLoader();Swal.fire('Error',''+e,'error');})
+    .obtenerTodasLasActas({});
+}
+
+function renderConsultaActas(actas){
+  var total=actas.length, activas=0, canceladas=0;
+  actas.forEach(function(a){if((a.estatus||'').toUpperCase()==='ACTIVA')activas++;else canceladas++;});
+  var html=
+    '<div class="card-pro mb-3">'
+    +'<div class="d-flex justify-content-between align-items-center mb-4">'
+    +'<div class="d-flex align-items-center gap-3">'
+    +'<div style="width:48px;height:48px;border-radius:12px;background:#dc262620;display:flex;align-items:center;justify-content:center">'
+    +'<i class="fas fa-search" style="color:#dc2626;font-size:1.4rem"></i></div>'
+    +'<div><h5 class="fw-bold m-0">Consulta de Actas</h5><p class="text-muted small m-0">Historial completo de actas administrativas</p></div></div>'
+    +'<button class="btn fw-bold rounded-pill px-4" style="background:#dc2626;color:white" onclick="loadActas()"><i class="fas fa-plus me-2"></i>Nueva Acta</button>'
+    +'</div>'
+    +'<div class="row g-3 mb-4">'
+    +_sc('Total de Actas',total,'#1a237e','fa-file-alt')
+    +_sc('Actas Activas',activas,'#dc2626','fa-exclamation-circle')
+    +_sc('Canceladas',canceladas,'#64748b','fa-times-circle')
+    +'</div>'
+    +'<div class="row g-2 mb-3">'
+    +'<div class="col-md-4"><input id="fi-emp" class="form-control form-control-sm" placeholder="🔍 Buscar empleado..." oninput="filtrarActas()"></div>'
+    +'<div class="col-md-3"><select id="fi-tipo" class="form-select form-select-sm" onchange="filtrarActas()"><option value="">Todos los tipos</option>'
+    +TIPOS_FALTA.map(function(t){return '<option>'+t+'</option>';}).join('')+'</select></div>'
+    +'<div class="col-md-3"><select id="fi-est" class="form-select form-select-sm" onchange="filtrarActas()"><option value="">Todos los estatus</option><option>ACTIVA</option><option>CANCELADA</option></select></div>'
+    +'</div>'
+    +'<div class="table-responsive"><table class="table table-hover align-middle">'
+    +'<thead class="table-light"><tr><th>Folio</th><th>Fecha</th><th>Empleado</th><th>Área</th><th>Tipo de Falta</th><th>Sanción</th><th>Estatus</th><th>Acciones</th></tr></thead>'
+    +'<tbody id="tbody-actas">'
+    +(actas.length===0?'<tr><td colspan="8" class="text-center text-muted py-5">No hay actas registradas</td></tr>'
+      :(_rhSet('actas',actas),actas.map(function(a,aidx){return _rowActa(a,aidx);})).join(''))
+    +'</tbody></table></div></div>';
+  setTimeout(_actasBindEvents,0);
+  document.getElementById('content-area').innerHTML=html;
+  window._actasCache=actas;
+}
+
+function _sc(label,val,color,icon){
+  return '<div class="col-md-4"><div class="stat-card" style="border-left-color:'+color+'">'
+    +'<div class="d-flex justify-content-between align-items-center">'
+    +'<div><div class="stat-val" style="color:'+color+'">'+val+'</div><div class="stat-label">'+label+'</div></div>'
+    +'<i class="fas '+icon+' fa-2x" style="color:'+color+';opacity:.2"></i>'
+    +'</div></div></div>';
+}
+
+function _rowActa(a,aidx){
+  var badge=(a.estatus||'').toUpperCase()==='ACTIVA'
+    ?'<span class="badge" style="background:#fee2e2;color:#b91c1c">Activa</span>'
+    :'<span class="badge" style="background:#f1f5f9;color:#64748b">Cancelada</span>';
+  var activa=(a.estatus||'').toUpperCase()==='ACTIVA';
+  return '<tr data-emp="'+(a.empleado||'').toUpperCase()+'" data-tipo="'+(a.tipoFalta||'').toUpperCase()+'" data-est="'+(a.estatus||'').toUpperCase()+'">'
+    +'<td><span class="fw-bold" style="color:#1a237e;font-size:.8rem">'+a.folio+'</span></td>'
+    +'<td class="small">'+_fmtFecha(a.fecha)+'</td>'
+    +'<td class="fw-bold small">'+a.empleado+'</td>'
+    +'<td class="small text-muted">'+(a.departamento||'—')+'</td>'
+    +'<td class="small">'+a.tipoFalta+'</td>'
+    +'<td class="small">'+a.sancion+'</td>'
+    +'<td>'+badge+'</td>'
+    +'<td><div class="d-flex gap-1">'
+    +'<button class="btn btn-sm btn-outline-primary rounded-pill" style="font-size:.7rem" data-accion="acta-ver" data-idx="'+aidx+'"><i class="fas fa-eye me-1"></i>Ver</button>'
+    +(activa?'<button class="btn btn-sm btn-outline-warning rounded-pill" style="font-size:.7rem" data-accion="acta-editar" data-idx="'+aidx+'"><i class="fas fa-edit me-1"></i>Editar</button>':'')
+    +(activa?'<button class="btn btn-sm btn-outline-secondary rounded-pill" style="font-size:.7rem" data-accion="acta-cancelar" data-folio="'+a.folio+'"><i class="fas fa-ban me-1"></i>Cancelar</button>':'')
+    +'</div></td></tr>';
+}
+// Delegado de eventos para tabla de actas
+function _actasBindEvents(){
+  var area=document.getElementById('content-area');
+  if(!area) return;
+  area.addEventListener('click',function(ev){
+    var btn=ev.target.closest('[data-accion]');
+    if(!btn) return;
+    var ac=btn.getAttribute('data-accion');
+    var idx=parseInt(btn.getAttribute('data-idx')||'0',10);
+    if(ac==='acta-ver')     acta_verDetalle(_rhGet('actas',idx));
+    else if(ac==='acta-editar')   acta_editarModal(_rhGet('actas',idx));
+    else if(ac==='acta-cancelar') acta_cancelar(btn.getAttribute('data-folio'));
+  },{once:true});
+}
+
+
+function filtrarActas(){
+  var emp =(document.getElementById('fi-emp').value ||'').toUpperCase().trim();
+  var tipo=(document.getElementById('fi-tipo').value||'').toUpperCase().trim();
+  var est =(document.getElementById('fi-est').value ||'').toUpperCase().trim();
+  document.querySelectorAll('#tbody-actas tr').forEach(function(tr){
+    var v=(!emp||tr.dataset.emp.includes(emp))&&(!tipo||tr.dataset.tipo.includes(tipo))&&(!est||tr.dataset.est===est);
+    tr.style.display=v?'':'none';
+  });
+}
+
+function acta_verDetalle(a){
+  var hoy=new Date();
+  var fechaHoy=('0'+hoy.getDate()).slice(-2)+'/'+('0'+(hoy.getMonth()+1)).slice(-2)+'/'+hoy.getFullYear();
+  google.script.run
+    .withSuccessHandler(function(hist){_imprimirActaHTML(a,a.folio,hist||[],fechaHoy);})
+    .withFailureHandler(function(){_imprimirActaHTML(a,a.folio,[],fechaHoy);})
+    .obtenerActasPorEmpleado(a.empleado);
+}
+
+// ── FIX 2: Modal de edición de acta ────────────────────────────────────
+function acta_editarModal(a){
+  var optsTipo = TIPOS_FALTA.map(function(t){
+    return '<option'+(t===a.tipoFalta?' selected':'')+'>'+t+'</option>';
+  }).join('');
+  var optsSanc = TIPOS_SANCION.map(function(t){
+    return '<option'+(t===a.sancion?' selected':'')+'>'+t+'</option>';
+  }).join('');
+  var optsArt = ARTICULOS_REGLAMENTO.map(function(t){
+    return '<option'+(t===a.articulo?' selected':'')+'>'+t+'</option>';
+  }).join('');
+
+  // Convertir fecha ISO a valor para input date (yyyy-mm-dd)
+  var fechaInput='';
+  var fd=_fmtFecha(a.fecha); // dd/mm/aaaa
+  if(fd&&fd!=='—'){var p=fd.split('/');if(p.length===3)fechaInput=p[2]+'-'+p[1]+'-'+p[0];}
+
+  Swal.fire({
+    title: 'Editar Acta: <span style="color:#dc2626">'+a.folio+'</span>',
+    width: '680px',
+    html:
+      '<div class="text-start" style="font-size:.88rem">'
+      +'<div class="row g-2 mb-2">'
+      +'<div class="col-8"><label class="form-label small fw-bold">Empleado</label>'
+      +'<input class="form-control form-control-sm bg-light" value="'+a.empleado+'" readonly></div>'
+      +'<div class="col-4"><label class="form-label small fw-bold">Fecha</label>'
+      +'<input id="ed-fecha" type="date" class="form-control form-control-sm" value="'+fechaInput+'"></div>'
+      +'</div>'
+      +'<div class="row g-2 mb-2">'
+      +'<div class="col-6"><label class="form-label small fw-bold">Departamento</label>'
+      +'<input id="ed-dept" class="form-control form-control-sm" value="'+(a.departamento||'')+'"></div>'
+      +'<div class="col-6"><label class="form-label small fw-bold">Puesto</label>'
+      +'<input id="ed-puesto" class="form-control form-control-sm" value="'+(a.puesto||'')+'"></div>'
+      +'</div>'
+      +'<div class="row g-2 mb-2">'
+      +'<div class="col-6"><label class="form-label small fw-bold">Tipo de Falta</label>'
+      +'<select id="ed-tipo" class="form-select form-select-sm">'+optsTipo+'</select></div>'
+      +'<div class="col-6"><label class="form-label small fw-bold">Artículo Reglamento</label>'
+      +'<select id="ed-art" class="form-select form-select-sm"><option value="">— Sin artículo —</option>'+optsArt+'</select></div>'
+      +'</div>'
+      +'<div class="mb-2"><label class="form-label small fw-bold">Descripción de hechos</label>'
+      +'<textarea id="ed-desc" class="form-control form-control-sm" rows="3">'+a.descripcion+'</textarea></div>'
+      +'<div class="row g-2 mb-2">'
+      +'<div class="col-6"><label class="form-label small fw-bold">Sanción</label>'
+      +'<select id="ed-sanc" class="form-select form-select-sm">'+optsSanc+'</select></div>'
+      +'<div class="col-6"><label class="form-label small fw-bold">Autorizado por</label>'
+      +'<input id="ed-auth" class="form-control form-control-sm" value="'+(a.autorizadoPor||'')+'"></div>'
+      +'</div>'
+      +'<div class="row g-2 mb-2">'
+      +'<div class="col-6"><label class="form-label small fw-bold">Testigo 1</label>'
+      +'<input id="ed-t1" class="form-control form-control-sm" value="'+(a.testigo1||'')+'"></div>'
+      +'<div class="col-6"><label class="form-label small fw-bold">Testigo 2</label>'
+      +'<input id="ed-t2" class="form-control form-control-sm" value="'+(a.testigo2||'')+'"></div>'
+      +'</div>'
+      +'<div><label class="form-label small fw-bold">Observaciones</label>'
+      +'<textarea id="ed-obs" class="form-control form-control-sm" rows="2">'+a.observaciones+'</textarea></div>'
+      +'</div>',
+    showCancelButton: true,
+    confirmButtonText: '<i class="fas fa-save me-1"></i>Guardar cambios',
+    cancelButtonText: 'Cancelar',
+    confirmButtonColor: '#1a237e',
+    preConfirm: function(){
+      var fv=document.getElementById('ed-fecha').value;
+      var p=fv.split('-');
+      var fechaFmt=p.length===3?p[2]+'/'+p[1]+'/'+p[0]:fv;
+      return {
+        folio:        a.folio,
+        empleado:     a.empleado,
+        numEmpleado:  a.numEmpleado||'',
+        fecha:        fechaFmt,
+        departamento: document.getElementById('ed-dept').value,
+        puesto:       document.getElementById('ed-puesto').value,
+        tipoFalta:    document.getElementById('ed-tipo').value,
+        articulo:     document.getElementById('ed-art').value,
+        descripcion:  document.getElementById('ed-desc').value,
+        sancion:      document.getElementById('ed-sanc').value,
+        autorizadoPor:document.getElementById('ed-auth').value,
+        testigo1:     document.getElementById('ed-t1').value,
+        testigo2:     document.getElementById('ed-t2').value,
+        observaciones:document.getElementById('ed-obs').value,
+        estatus:      a.estatus||'ACTIVA'
+      };
+    }
+  }).then(function(r){
+    if(!r.isConfirmed)return;
+    toggleSaving(true,'Actualizando acta...');
+    google.script.run
+      .withSuccessHandler(function(res){
+        toggleSaving(false);
+        if(res==='OK'){
+          rhToast('success','✅ Acta actualizada');
+          setTimeout(function(){loadConsultaActas();},1500);
+        } else {
+          Swal.fire('Error',res,'error');
+        }
+      })
+      .withFailureHandler(function(e){toggleSaving(false);Swal.fire('Error',''+e,'error');})
+      .actualizarActaAdministrativa(r.value);
+  });
+}
+
+function acta_cancelar(folio){
+  Swal.fire({title:'¿Cancelar acta '+folio+'?',
+    html:'<small class="text-muted">El estatus cambiará a CANCELADA. El registro no se elimina.</small>',
+    icon:'warning',showCancelButton:true,confirmButtonText:'Sí, cancelar',
+    confirmButtonColor:'#ef4444',cancelButtonText:'No'
+  }).then(function(r){
+    if(!r.isConfirmed)return;
+    toggleSaving(true,'Cancelando...');
+    google.script.run
+      .withSuccessHandler(function(){toggleSaving(false);loadConsultaActas();})
+      .withFailureHandler(function(e){toggleSaving(false);Swal.fire('Error',''+e,'error');})
+      .actualizarEstatusActa(folio,'CANCELADA');
+  });
+}
+
+
+// ══════════════════════════════════════════════════════════════════════
+//  MÓDULO: INCIDENCIAS  (Ausentismo | Retardos | Permisos)
+//  Color principal: #ea580c (naranja)
+// ══════════════════════════════════════════════════════════════════════
+
+var _incCat = null; // catálogo de empleados compartido
+
+// Catálogos
+var MOTIVOS_AUSENTISMO = [
+  'Enfermedad sin incapacidad','Incapacidad IMSS','Asunto personal',
+  'Fallecimiento familiar','Accidente fuera del trabajo',
+  'Citatorio legal / judicial','Motivo desconocido','Otro'
+];
+var TURNOS = [
+  {label:'1°',   hora:'06:30'},
+  {label:'2°',   hora:'14:30'},
+  {label:'3°',   hora:'22:00'},
+  {label:'Mixto',hora:'08:30'}
+];
+
+// Genera el <select> de turnos con datos
+function _opsTurno(selectId){
+  return TURNOS.map(function(t){
+    return '<option value="'+t.label+'" data-hora="'+t.hora+'">Turno '+t.label+' ('+t.hora+')</option>';
+  }).join('');
+}
+// Al cambiar turno → auto-llenar hora programada (Retardos)
+function _turnoHora(selectId, targetId){
+  var sel=document.getElementById(selectId);
+  if(!sel||!sel.selectedOptions[0]) return;
+  var h=sel.selectedOptions[0].getAttribute('data-hora');
+  var target=document.getElementById(targetId);
+  if(target && h) target.value=h;
+}
+var TIPOS_PERMISO = [
+  {id:'PAGO_TIEMPO',  label:'Pago de tiempo'},
+  {id:'GOCE',         label:'Permiso con goce de sueldo'},
+  {id:'SIN_GOCE',     label:'Permiso sin goce de sueldo'}
+];
+
+// ── Helpers ────────────────────────────────────────────────────────────
+function _incColor(){ return '#ea580c'; }
+function _incHoyDate(){
+  var d=new Date();
+  return d.getFullYear()+'-'+('0'+(d.getMonth()+1)).slice(-2)+'-'+('0'+d.getDate()).slice(-2);
+}
+function _incFmt(v){
+  if(!v||v===''||v==='—') return '—';
+  var s=String(v).trim();
+  if(s.length>10){ var d=new Date(s); if(!isNaN(d.getTime())){
+    var u=d.getTime()+(d.getTimezoneOffset()*60000); var d6=new Date(u-(6*3600000));
+    return ('0'+d6.getDate()).slice(-2)+'/'
+      +('0'+(d6.getMonth()+1)).slice(-2)+'/'+d6.getFullYear();
+  }}
+  if(/^\d{4}-\d{2}-\d{2}$/.test(s)){var p=s.split('-');return p[2]+'/'+p[1]+'/'+p[0];}
+  return s;
+}
+
+// ── Autocomplete de empleados con teclado, Enter/Tab y auto-primer-match ──
+function _incFiltrarEmpleados(inputId, hiddenId, acId, extraCb){
+  var inp=document.getElementById(inputId);
+  var q=(inp.value||'').trim().toUpperCase();
+  var ac=document.getElementById(acId);
+  document.getElementById(hiddenId).value='';
+  ac._matches=[];
+  ac._cursor=-1;
+  if(!q||!_incCat){ac.style.display='none';ac.innerHTML='';return;}
+  var matches=_incCat.filter(function(e){return e.nombre.toUpperCase().includes(q);});
+  if(!matches.length){ac.style.display='none';ac.innerHTML='';return;}
+  ac._matches=matches.slice(0,12);
+  ac.innerHTML='';
+  ac._matches.forEach(function(e,idx){
+    var div=document.createElement('div');
+    div.className='inc-ac-item';
+    div.setAttribute('data-idx',idx);
+    div.style.cssText='padding:9px 13px;cursor:pointer;font-size:.85rem;font-weight:500;border-bottom:1px solid #f1f5f9';
+    div.innerHTML='<span style="font-weight:700">'+e.nombre+'</span>'
+      +(e.numEmpleado?' <span style="color:#64748b;font-size:.8rem">('+e.numEmpleado+')</span>':'')
+      +(e.area?'<br><small style="color:#64748b">'+e.area+' — '+e.puesto+'</small>':'');
+    div.addEventListener('mouseover',function(){_incAcHighlight(ac,idx);});
+    div.addEventListener('mousedown',function(ev){
+      ev.preventDefault();
+      _incAcElegir(inputId,hiddenId,ac,idx,extraCb);
+    });
+    ac.appendChild(div);
+  });
+  ac.style.display='block';
+}
+function _incAcHighlight(ac,idx){
+  ac._cursor=idx;
+  var items=ac.querySelectorAll('.inc-ac-item');
+  items.forEach(function(el,i){
+    el.style.background=i===idx?'#fff7ed':'';
+    el.style.fontWeight=i===idx?'700':'500';
+  });
+}
+function _incAcElegir(inputId,hiddenId,ac,idx,extraCb){
+  var e=ac._matches&&ac._matches[idx];
+  if(!e) return;
+  document.getElementById(inputId).value=e.nombre;
+  document.getElementById(hiddenId).value=e.nombre;
+  ac.style.display='none'; ac.innerHTML=''; ac._matches=[]; ac._cursor=-1;
+  if(extraCb) extraCb(e);
+}
+function _incCerrarAC(acId){
+  var ac=document.getElementById(acId);
+  if(ac) ac.style.display='none';
+}
+// Al salir del input: si no eligió nada válido, toma el primero de la lista
+function _incBlurEmp(inputId,hiddenId,acId,extraCb){
+  setTimeout(function(){
+    var ac=document.getElementById(acId);
+    var hidden=document.getElementById(hiddenId);
+    var inp=document.getElementById(inputId);
+    if(!ac) return;
+    // Si ya tiene valor válido (lo eligió con click o teclado), no hacer nada
+    if(hidden.value) { ac.style.display='none'; return; }
+    // Si hay resultados en la lista, tomar el primero automáticamente
+    if(ac._matches && ac._matches.length){
+      _incAcElegir(inputId,hiddenId,ac,0,extraCb);
+    } else {
+      // No hay coincidencias: limpiar el campo para no dejar nombres inválidos
+      inp.value='';
+      hidden.value='';
+      ac.style.display='none';
+    }
+  },200);
+}
+
+// ── Campo empleado reutilizable con navegación de teclado ─────────────
+function _incCampoEmp(inputId, hiddenId, acId, onElegir){
+  return '<div style="position:relative">'
+    +'<input id="'+inputId+'" class="form-control" placeholder="Escribe para buscar..." autocomplete="off"'
+    +' oninput="_incFiltrarEmpleados(\''+inputId+'\',\''+hiddenId+'\',\''+acId+'\','+onElegir+')"'
+    +' onblur="_incBlurEmp(\''+inputId+'\',\''+hiddenId+'\',\''+acId+'\','+onElegir+')"'
+    +' onkeydown="_incKeydown(event,\''+inputId+'\',\''+hiddenId+'\',\''+acId+'\','+onElegir+')">'
+    +'<div id="'+acId+'" style="display:none;position:absolute;top:100%;left:0;right:0;background:white;'
+    +'border:1px solid #e2e8f0;border-radius:0 0 10px 10px;box-shadow:0 8px 24px rgba(0,0,0,.12);z-index:999;max-height:220px;overflow-y:auto"></div>'
+    +'<input type="hidden" id="'+hiddenId+'" value=""></div>';
+}
+// Navegación con teclado dentro del autocomplete
+function _incKeydown(ev,inputId,hiddenId,acId,extraCb){
+  var ac=document.getElementById(acId);
+  if(!ac||ac.style.display==='none') return;
+  var matches=ac._matches||[];
+  if(!matches.length) return;
+  var cur=ac._cursor!=null?ac._cursor:-1;
+  if(ev.key==='ArrowDown'){
+    ev.preventDefault();
+    cur=Math.min(cur+1,matches.length-1);
+    _incAcHighlight(ac,cur);
+  } else if(ev.key==='ArrowUp'){
+    ev.preventDefault();
+    cur=Math.max(cur-1,0);
+    _incAcHighlight(ac,cur);
+  } else if(ev.key==='Enter'||ev.key==='Tab'){
+    ev.preventDefault();
+    // Si hay uno resaltado úsalo, si no usa el primero
+    var idx=cur>=0?cur:0;
+    _incAcElegir(inputId,hiddenId,ac,idx,extraCb);
+    // Mover foco al siguiente campo en Tab
+    if(ev.key==='Tab'){
+      var inputs=Array.from(document.querySelectorAll('input,select,textarea,button'));
+      var inp=document.getElementById(inputId);
+      var pos=inputs.indexOf(inp);
+      if(pos>=0&&inputs[pos+1]) inputs[pos+1].focus();
+    }
+  }
+}
+
+// ── Botones SI / NO (reemplaza select ¿Justificado?) ─────────────────
+function _incBtnJust(hiddenId){
+  return '<div style="display:flex;gap:8px;margin-top:2px">'
+    +'<button type="button" id="'+hiddenId+'-si" onclick="_incJustClick(\''+hiddenId+'\',\'SI\')"'
+    +' style="flex:1;padding:8px 0;border-radius:10px;border:2px solid #e2e8f0;'
+    +'background:#f8fafc;color:#475569;font-weight:700;font-size:.9rem;cursor:pointer;transition:all .15s">'
+    +'✓ Sí</button>'
+    +'<button type="button" id="'+hiddenId+'-no" onclick="_incJustClick(\''+hiddenId+'\',\'NO\')"'
+    +' style="flex:1;padding:8px 0;border-radius:10px;border:2px solid #dc2626;'
+    +'background:#fee2e2;color:#dc2626;font-weight:700;font-size:.9rem;cursor:pointer;transition:all .15s">'
+    +'✗ No</button>'
+    +'<input type="hidden" id="'+hiddenId+'" value="NO">'
+    +'</div>';
+}
+function _incJustClick(hiddenId, val){
+  document.getElementById(hiddenId).value=val;
+  var siBtn=document.getElementById(hiddenId+'-si');
+  var noBtn=document.getElementById(hiddenId+'-no');
+  if(val==='SI'){
+    siBtn.style.cssText='flex:1;padding:8px 0;border-radius:10px;border:2px solid #16a34a;background:#dcfce7;color:#16a34a;font-weight:700;font-size:.9rem;cursor:pointer;transition:all .15s';
+    noBtn.style.cssText='flex:1;padding:8px 0;border-radius:10px;border:2px solid #e2e8f0;background:#f8fafc;color:#94a3b8;font-weight:700;font-size:.9rem;cursor:pointer;transition:all .15s';
+  } else {
+    noBtn.style.cssText='flex:1;padding:8px 0;border-radius:10px;border:2px solid #dc2626;background:#fee2e2;color:#dc2626;font-weight:700;font-size:.9rem;cursor:pointer;transition:all .15s';
+    siBtn.style.cssText='flex:1;padding:8px 0;border-radius:10px;border:2px solid #e2e8f0;background:#f8fafc;color:#94a3b8;font-weight:700;font-size:.9rem;cursor:pointer;transition:all .15s';
+  }
+}
+
+// ── Botones de Turno (reemplaza select Turno) ─────────────────────────
+// targetHoraId: si se pasa, auto-llena la hora al seleccionar (para Retardos/Permisos)
+function _incBtnTurno(hiddenId, targetHoraId){
+  var btns=TURNOS.map(function(t){
+    return '<button type="button" data-turno="'+t.label+'" data-hora="'+t.hora+'"'
+      +' onclick="_incTurnoClick(\''+hiddenId+'\',this'+(targetHoraId?',\''+targetHoraId+'\'':'')+')"'
+      +' style="flex:1;padding:7px 0;border-radius:10px;border:2px solid #e2e8f0;'
+      +'background:#f8fafc;color:#475569;font-weight:700;font-size:.85rem;cursor:pointer;transition:all .15s">'
+      +t.label+'</button>';
+  }).join('');
+  return '<div style="display:flex;gap:6px;margin-top:2px">'
+    +btns
+    +'<input type="hidden" id="'+hiddenId+'" value="">'
+    +'</div>';
+}
+function _incTurnoClick(hiddenId, btn, targetHoraId){
+  var val=btn.getAttribute('data-turno');
+  var hora=btn.getAttribute('data-hora');
+  document.getElementById(hiddenId).value=val;
+  // Resaltar el botón presionado
+  var parent=btn.parentElement;
+  parent.querySelectorAll('button').forEach(function(b){
+    if(b===btn){
+      b.style.cssText='flex:1;padding:7px 0;border-radius:10px;border:2px solid #ea580c;background:#fff7ed;color:#ea580c;font-weight:700;font-size:.85rem;cursor:pointer;transition:all .15s';
+    } else {
+      b.style.cssText='flex:1;padding:7px 0;border-radius:10px;border:2px solid #e2e8f0;background:#f8fafc;color:#475569;font-weight:700;font-size:.85rem;cursor:pointer;transition:all .15s';
+    }
+  });
+  // Auto-llenar hora si aplica (Retardos y Permisos)
+  if(targetHoraId){
+    var target=document.getElementById(targetHoraId);
+    if(target && hora) target.value=hora;
+  }
+}
+
+// ── Card de estadística reutilizable ──────────────────────────────────
+function _incStat(label, val, color, icon){
+  return '<div class="col-md-4"><div class="stat-card" style="border-left-color:'+color+'">'
+    +'<div class="d-flex justify-content-between align-items-center">'
+    +'<div><div class="stat-val" style="color:'+color+'">'+val+'</div>'
+    +'<div class="stat-label">'+label+'</div></div>'
+    +'<i class="fas '+icon+' fa-2x" style="color:'+color+';opacity:.2"></i>'
+    +'</div></div></div>';
+}
+
+// ══════════════════════════════════════════════════════════════════════
+//  1. AUSENTISMO
+// ══════════════════════════════════════════════════════════════════════

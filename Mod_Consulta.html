@@ -1,0 +1,355 @@
+function loadConsulta(){
+  showLoader('Cargando consulta...');
+  google.script.run
+    .withSuccessHandler(function(res){
+      hideLoader();
+      cons_datos = Array.isArray(res) ? res : (res.lista || []);
+      document.getElementById('content-area').innerHTML =
+        '<div class="card-pro">'
+        +'<div id="cons-grid"></div>'
+        +'</div>';
+      _headerSearch(true, '🔍 Buscar por nombre...', cons_render, false, null);
+      cons_render();
+    })
+    .withFailureHandler(function(e){ hideLoader(); rhAlert('error','Error',''+e); })
+    .obtenerDatosConsulta();
+}
+
+function cons_render(){
+  var inp = document.getElementById('header-search-input');
+  var f = (inp ? inp.value : '').toLowerCase();
+  var html = '';
+
+  cons_datos.filter(function(op){ return op.nombre.toLowerCase().includes(f); }).forEach(function(op){
+    var soles = op.solicitudesRecientes || [];
+
+    // Lógica de balances
+    var pTotal      = Number(op.saldoInicial || op.dispAnt || 0); // Col P: fijo
+    var sTotal      = Number(op.proporcionales || 0);              // Col S
+    var tomados     = Number(op.diasTomados || 0);                 // Col T: total tomados
+    var pTomados    = Math.min(tomados, pTotal);
+    var pPendientes = Math.max(0, pTotal - tomados);
+    var propConsumidos = Math.max(0, tomados - pTotal);
+    var sTomados    = Math.min(propConsumidos, sTotal);
+    var sPendientes = Math.max(0, sTotal - sTomados);
+    var granTotal   = (pTotal + sTotal) - tomados;
+
+    html += '<div class="card-pro mb-3" style="border:1.5px solid #e0e7ff;border-radius:16px;overflow:hidden">';
+
+    // Cabecera del empleado
+    html += '<div style="background:linear-gradient(135deg,#1e1b4b,#4f46e5);padding:14px 18px;display:flex;align-items:center;gap:14px">';
+    html += '<img src="'+(op.foto||'')+'" style="width:52px;height:52px;border-radius:50%;object-fit:cover;border:3px solid rgba(255,255,255,.3)" onerror="this.src=\'https://ui-avatars.com/api/?name='+encodeURIComponent(op.nombre)+'&background=4f46e5&color=fff\'">';
+    html += '<div style="flex:1"><div class="fw-bold text-white" style="font-size:1rem">'+op.nombre+'</div>';
+    html += '<small style="color:#c7d2fe">Clave: '+op.clave+' | '+op.area+' | '+op.puesto+'</small></div>';
+    html += '<div style="text-align:right"><div style="font-size:.65rem;color:#a5b4fc;text-transform:uppercase;font-weight:700;letter-spacing:.05em">Ingreso</div>';
+    html += '<div style="font-size:.95rem;font-weight:900;color:white">'+op.ingreso+'</div></div>';
+    html += '</div>';
+
+    // Balances
+    html += '<div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:0;border-bottom:1.5px solid #e0e7ff">';
+    html += '<div style="padding:12px 16px;border-right:1px solid #e0e7ff;background:#f8faff">';
+    html += '<div style="font-size:.7rem;font-weight:700;color:#6366f1;text-transform:uppercase;letter-spacing:.05em">Período Anterior (P)</div>';
+    html += '<div style="font-size:1.6rem;font-weight:900;color:#1e1b4b">'+pTotal+'</div>';
+    html += '<div style="font-size:.75rem"><span style="color:#15803d;font-weight:700">Tomados: '+pTomados+'</span> &nbsp;|&nbsp; <span style="color:#b91c1c;font-weight:700">Pendientes: '+pPendientes+'</span></div>';
+    html += '</div>';
+    html += '<div style="padding:12px 16px;border-right:1px solid #e0e7ff;background:#f8faff">';
+    html += '<div style="font-size:.7rem;font-weight:700;color:#6366f1;text-transform:uppercase;letter-spacing:.05em">Proporcionales (S)</div>';
+    html += '<div style="font-size:1.6rem;font-weight:900;color:#1e1b4b">'+sTotal+'</div>';
+    html += '<div style="font-size:.75rem"><span style="color:#15803d;font-weight:700">Tomados: '+sTomados+'</span> &nbsp;|&nbsp; <span style="color:#b91c1c;font-weight:700">Pendientes: '+sPendientes+'</span></div>';
+    html += '</div>';
+    html += '<div style="padding:12px 16px;background:#ede9fe">';
+    html += '<div style="font-size:.7rem;font-weight:700;color:#6366f1;text-transform:uppercase;letter-spacing:.05em">Total Disponible</div>';
+    html += '<div style="font-size:2rem;font-weight:900;color:'+( granTotal<=0?'#dc2626':'#1e1b4b')+'">'+granTotal+'</div>';
+    html += '<div style="font-size:.75rem;color:#64748b">días restantes</div>';
+    html += '</div>';
+    html += '</div>';
+
+    // Tabla de solicitudes recientes
+    if(soles.length){
+      // Total días tomados en el periodo (APLICADO + CONSIDERAR=SI)
+      // Usar diasTomados de Col T (total real, no solo las solicitudes visibles)
+      var diasPeriodo = tomados;
+      html += '<div style="padding:14px 18px">';
+      html += '<div style="display:flex;align-items:center;gap:16px;margin-bottom:8px;flex-wrap:wrap">';
+      html += '<div style="font-size:.7rem;font-weight:700;color:#64748b;text-transform:uppercase;letter-spacing:.06em">Últimas Solicitudes</div>';
+      html += '<div style="font-size:.78rem;font-weight:700;color:#1e1b4b;background:#e0e7ff;border-radius:20px;padding:3px 12px">Total días tomados en el periodo: <span style="color:#4f46e5">'+diasPeriodo+' días</span></div>';
+      html += '</div>';
+      html += '<table class="table table-sm table-hover align-middle" style="font-size:.82rem">';
+      html += '<thead class="table-light"><tr><th>Folio</th><th>Inicio</th><th>Fin</th><th class="text-center">Días</th><th>Estado</th>'
+            + '<th style="max-width:160px">Observaciones</th><th class="text-center">Considerar</th><th>Nota</th>'
+            + '<th class="text-center">Acciones</th></tr></thead>';
+      html += '<tbody id="cons-tbody-'+op.id+'">';
+      soles.forEach(function(s){
+        var estadoColor = s.estado==='SOLICITADO'?'#ea580c':s.estado==='APLICADO'?'#15803d':s.estado==='CANCELADO'?'#6b7280':'#1d4ed8';
+        var consVal = String(s.considerar||'').toUpperCase();
+        var consColor = consVal==='SI'?'#15803d':consVal==='NO'?'#b91c1c':'#64748b';
+        var obsTxt = String(s.obs||'').trim();
+        html += '<tr>';
+        html += '<td class="fw-bold" style="color:var(--rh-color)">'+s.folio+'</td>';
+        html += '<td>'+_consFmtFecha(s.inicio)+'</td>';
+        html += '<td>'+_consFmtFecha(s.fin)+'</td>';
+        html += '<td class="text-center fw-bold">'+s.dias+'</td>';
+        html += '<td><span style="background:'+estadoColor+'20;color:'+estadoColor+';padding:3px 10px;border-radius:20px;font-size:.75rem;font-weight:700">'+s.estado+'</span></td>';
+        // Observaciones: ancho fijo, texto truncado, tooltip con texto completo
+        html += '<td style="max-width:160px;width:160px"><div title="'+obsTxt.replace(/"/g,"'")+'" style="white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:155px;font-size:.78rem;color:#475569">'+( obsTxt||'—')+'</div></td>';
+        html += '<td class="text-center"><span style="font-weight:700;color:'+consColor+';font-size:.8rem">'+(consVal||'—')+'</span></td>';
+        html += '<td style="font-size:.78rem;color:#475569">'+(s.nota||'—')+'</td>';
+        html += '<td class="text-center" style="display:flex;gap:6px;justify-content:center;align-items:center">';
+        html += '<button class="btn btn-sm" style="background:#ede9fe;color:var(--rh-color);border-radius:8px;padding:4px 10px;font-size:.8rem" '
+              + 'data-accion="cons-print" data-idSol="'+s.idSol+'" data-idOp="'+op.id+'">'
+              + '🖨️ Imprimir</button>';
+        if(s.estado !== 'APLICADO'){
+          html += '<button class="btn btn-sm" style="background:#fee2e2;color:#dc2626;border-radius:8px;padding:4px 10px;font-size:.8rem" '
+                + 'data-accion="cons-cancelar" data-idSol="'+s.idSol+'" data-idOp="'+op.id+'">'
+                + '❌ Cancelar</button>';
+        }
+        html += '</td></tr>';
+      });
+      html += '</tbody></table></div>';
+    } else {
+      html += '<div style="padding:14px 18px"><p class="text-muted small mb-0">Sin solicitudes registradas.</p></div>';
+    }
+
+    // Botón cargar más
+    var offsetActual = cons_offsets[op.id] || 5;
+    html += '<div id="cons-loadmore-'+op.id+'" style="padding:10px 18px;border-top:1px solid #e0e7ff;display:flex;align-items:center;gap:10px">';
+    html += '<button class="btn btn-sm" style="background:#ede9fe;color:var(--rh-color);border-radius:8px;padding:5px 14px;font-size:.8rem;font-weight:700" '
+          + 'data-accion="cons-mas" data-idOp="'+op.id+'" data-offset="'+offsetActual+'">'
+          + '＋ Ver más solicitudes</button>';
+    html += '<span id="cons-loader-'+op.id+'" style="display:none;font-size:.75rem;color:#6366f1;font-style:italic">⏳ cargando 5 solicitudes previas...</span>';
+    html += '</div>';
+
+    html += '</div>';
+  });
+
+  document.getElementById('cons-grid').innerHTML = html || '<p class="text-center text-muted py-5">Sin resultados</p>';
+
+  var grid = document.getElementById('cons-grid');
+  if(grid && !grid._consBound){
+    grid._consBound = true;
+    grid.addEventListener('click', function(ev){
+      var btn = ev.target.closest('[data-accion]');
+      if(!btn) return;
+      var accion  = btn.getAttribute('data-accion');
+      var idSol   = btn.getAttribute('data-idSol');
+      var idOp    = btn.getAttribute('data-idOp');
+      if(accion === 'cons-print')    cons_imprimir(idSol, idOp);
+      if(accion === 'cons-cancelar') cons_cancelar(idSol, idOp);
+      if(accion === 'cons-mas'){
+        var offset = parseInt(btn.getAttribute('data-offset'), 10);
+        var idOpMas = btn.getAttribute('data-idOp');
+        var loaderEl = document.getElementById('cons-loader-'+idOpMas);
+        btn.disabled = true;
+        if(loaderEl) loaderEl.style.display = 'inline';
+        google.script.run
+          .withSuccessHandler(function(nuevas){
+            if(loaderEl) loaderEl.style.display = 'none';
+            btn.disabled = false;
+            if(!nuevas || !nuevas.length){ btn.textContent = 'Sin más solicitudes'; btn.disabled = true; return; }
+            cons_offsets[idOpMas] = offset + nuevas.length;
+            var opRef = cons_datos.find(function(x){ return String(x.id)===String(idOpMas); });
+            if(opRef) opRef.solicitudesRecientes = opRef.solicitudesRecientes.concat(nuevas);
+            var ultimo = nuevas[nuevas.length-1];
+            if(ultimo && ultimo.hayMas === false) btn.style.display = 'none';
+            _cons_renderSolesDeOp(idOpMas);
+          })
+          .withFailureHandler(function(e){ if(loaderEl) loaderEl.style.display='none'; btn.disabled=false; })
+          .obtenerSolicitudesPaginadas(idOpMas, offset);
+      }
+    });
+  }
+}
+
+function cons_cancelar(idSol, idOp){
+  var op = cons_datos.find(function(x){ return String(x.id) === String(idOp); });
+  var sol = op ? (op.solicitudesRecientes||[]).find(function(x){ return String(x.idSol)===String(idSol); }) : null;
+  if(sol && sol.estado === 'APLICADO'){
+    rhAlert('error','No permitido','No se puede cancelar una solicitud ya aplicada.');
+    return;
+  }
+  Swal.fire({
+    title: '¿Cancelar solicitud?',
+    html: '<div style="font-size:.95rem">Esta acción cambiará el estado a <b style="color:#dc2626">CANCELADO</b>.<br>¿Deseas continuar?</div>',
+    icon: 'warning',
+    showCancelButton: true,
+    confirmButtonText: '❌ Sí, cancelar',
+    confirmButtonColor: '#ef4444',
+    cancelButtonText: 'No, mantener',
+    cancelButtonColor: '#6b7280',
+    reverseButtons: true
+  }).then(function(r){
+    if(!r.isConfirmed) return;
+    showLoader('Cancelando...');
+    google.script.run
+      .withSuccessHandler(function(){
+        hideLoader();
+        rhToast('success','✅ Solicitud cancelada');
+        loadConsulta();
+      })
+      .withFailureHandler(function(e){ hideLoader(); rhAlert('error','Error',''+e); })
+      .procesarEstadoSolicitud(idSol, 'CANCELADO', {});
+  });
+}
+
+function _cons_renderSolesDeOp(idOp){
+  var op = cons_datos.find(function(x){ return String(x.id)===String(idOp); });
+  if(!op) return;
+  var soles = op.solicitudesRecientes || [];
+  var tbody = document.getElementById('cons-tbody-'+idOp);
+  if(!tbody) return;
+  var rows = '';
+  soles.forEach(function(s){
+    var estadoColor = s.estado==='SOLICITADO'?'#ea580c':s.estado==='APLICADO'?'#15803d':s.estado==='CANCELADO'?'#6b7280':'#1d4ed8';
+    var consVal = String(s.considerar||'').toUpperCase();
+    var consColor = consVal==='SI'?'#15803d':consVal==='NO'?'#b91c1c':'#64748b';
+    var obsTxt = String(s.obs||'').trim();
+    rows += '<tr>';
+    rows += '<td class="fw-bold" style="color:var(--rh-color)">'+s.folio+'</td>';
+    rows += '<td>'+_consFmtFecha(s.inicio)+'</td>';
+    rows += '<td>'+_consFmtFecha(s.fin)+'</td>';
+    rows += '<td class="text-center fw-bold">'+s.dias+'</td>';
+    rows += '<td><span style="background:'+estadoColor+'20;color:'+estadoColor+';padding:3px 10px;border-radius:20px;font-size:.75rem;font-weight:700">'+s.estado+'</span></td>';
+    rows += '<td style="max-width:160px;width:160px"><div title="'+obsTxt.replace(/"/g,"'")+'" style="white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:155px;font-size:.78rem;color:#475569">'+(obsTxt||'—')+'</div></td>';
+    rows += '<td class="text-center"><span style="font-weight:700;color:'+consColor+';font-size:.8rem">'+(consVal||'—')+'</span></td>';
+    rows += '<td style="font-size:.78rem;color:#475569">'+(s.nota||'—')+'</td>';
+    rows += '<td class="text-center" style="display:flex;gap:6px;justify-content:center;align-items:center">';
+    rows += '<button class="btn btn-sm" style="background:#ede9fe;color:var(--rh-color);border-radius:8px;padding:4px 10px;font-size:.8rem" '
+          + 'data-accion="cons-print" data-idSol="'+s.idSol+'" data-idOp="'+idOp+'">'
+          + '🖨️ Imprimir</button>';
+    if(s.estado !== 'APLICADO'){
+      rows += '<button class="btn btn-sm" style="background:#fee2e2;color:#dc2626;border-radius:8px;padding:4px 10px;font-size:.8rem" '
+            + 'data-accion="cons-cancelar" data-idSol="'+s.idSol+'" data-idOp="'+idOp+'">'
+            + '❌ Cancelar</button>';
+    }
+    rows += '</td></tr>';
+  });
+  tbody.innerHTML = rows;
+  var btnMas = document.querySelector('[data-accion="cons-mas"][data-idOp="'+idOp+'"]');
+  if(btnMas) btnMas.setAttribute('data-offset', String(soles.length));
+}
+
+function cons_imprimir(idSol, idOp){
+  var op = cons_datos.find(function(x){ return String(x.id) === String(idOp); });
+  if(!op) return;
+  var sol = (op.solicitudesRecientes||[]).find(function(x){ return String(x.idSol) === String(idSol); });
+  if(!sol) return;
+
+  showLoader('Generando formato...');
+  google.script.run
+    .withSuccessHandler(function(hist){
+      hideLoader();
+      var totalAcumulado = 0;
+      var htmlHist = (hist||[]).map(function(x){
+        totalAcumulado += Number(x.dias);
+        return '<tr><td>'+x.inicio+'</td><td>'+x.fin+'</td><td>'+x.dias+'</td></tr>';
+      }).join('');
+
+      var pHist           = Number(op.saldoInicial || op.dispAnt || 0); // Col P OPERADORES: siempre en tiempo real
+      var sHist           = Number(op.proporcionales || 0);              // Col S OPERADORES: en tiempo real
+      var tPrevios        = Number(op.diasTomados    || 0);              // Col T OPERADORES: en tiempo real
+      var diasSolicitados = Number(sol.dias          || 0);
+      var disfrutanConEsta = tPrevios + diasSolicitados;
+      var penAnt          = pHist - disfrutanConEsta;
+      var penAntDisplay   = Math.max(0, penAnt);
+      var propConsumidos  = penAnt < 0 ? Math.abs(penAnt) : 0;
+      var propRestantes   = Math.max(0, sHist - propConsumidos);
+      var totalRestante   = penAntDisplay + propRestantes;
+
+      var printArea = document.getElementById('cons-print-area');
+      if(!printArea){
+        printArea = document.createElement('div');
+        printArea.id = 'cons-print-area';
+        printArea.style.display = 'none';
+        document.body.appendChild(printArea);
+      }
+
+      printArea.innerHTML = `
+        <div style="border:2.5px solid #000;width:100%;padding:12px;box-sizing:border-box;display:flex;flex-direction:column;justify-content:space-between;font-family:Roboto,sans-serif;height:100%">
+          <div style="display:flex;align-items:center;border:2.5px solid #000;padding:10px">
+            <div style="width:20%"><img src="https://www.toolcn.mx/cdn/shop/files/logo_ToolCN_shopify.png?v=1751677238" width="160"></div>
+            <div style="width:60%;text-align:center">
+              <div style="font-size:18px;font-weight:900">Clavos Nacionales CN SA de CV</div>
+              <div style="font-size:13px;letter-spacing:2px;font-weight:700">SOLICITUD DE VACACIONES</div>
+            </div>
+            <div style="width:20%;border:3px solid #000;text-align:center;padding:5px">
+              <span style="font-size:12px;font-weight:900">FOLIO</span>
+              <div style="color:red;font-size:28px;font-weight:900">${sol.folio}</div>
+            </div>
+          </div>
+          <div style="background:#dfdfdf;text-align:center;font-weight:900;font-size:14px;padding:5px;border:1.5px solid #000;margin:8px 0;text-transform:uppercase">Datos del Trabajador</div>
+          <table style="width:100%;border-collapse:collapse">
+            <tr>
+              <td style="border:1.2px solid #000;padding:7px;width:12%"><small style="font-size:9px;font-weight:900;color:#999">CLAVE</small><div><b>${op.clave}</b></div></td>
+              <td style="border:1.2px solid #000;padding:7px;width:46%"><small style="font-size:9px;font-weight:900;color:#999">NOMBRE</small><div><b style="font-size:15px">${op.nombre}</b></div></td>
+              <td style="border:1.2px solid #000;padding:7px;width:20%"><small style="font-size:9px;font-weight:900;color:#999">F. INGRESO</small><div><b>${op.ingreso}</b></div></td>
+              <td style="border:1.2px solid #000;padding:7px;width:22%"><small style="font-size:9px;font-weight:900;color:#999">ÁREA</small><div><b>${op.area}</b></div></td>
+            </tr>
+          </table>
+          <p style="text-align:center;font-size:12px;font-style:italic;margin:7px 0">"Por medio de la presente solicito me sean concedidas mis vacaciones de acuerdo al art. No 76 de la Ley Federal del Trabajo"</p>
+          <div style="background:#dfdfdf;text-align:center;font-weight:900;font-size:14px;padding:5px;border:1.5px solid #000;margin-bottom:8px;text-transform:uppercase">Datos Generales y Observaciones</div>
+          <div style="display:flex;border:1.8px solid #000;flex:1;min-height:0">
+            <div style="width:58%;padding:14px;border-right:1.8px solid #000;display:flex;flex-direction:column;gap:8px">
+              <div style="font-size:13px;margin-bottom:6px"><b>COMENTARIOS:</b> <span style="border-bottom:1.8px solid #000;padding:0 10px;font-size:13px">${sol.obs && sol.obs.trim() ? sol.obs : 'Sin observaciones'}</span></div>
+              <div style="font-size:13px">DÍAS ARRANQUE PERIODO ANTERIOR (P): <b>${pHist}</b></div>
+              <div style="font-size:13px">DÍAS PROPORCIONALES PRÓXIMO PERIODO (S): <b>${sHist}</b></div>
+              <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:8px">
+                <div style="font-size:13px;line-height:2">
+                  FECHA DE INICIO:<br><b>${_consFmtFecha(sol.inicio)}</b><br><br>
+                  FECHA DE REGRESO:<br><b>${_consFmtFecha(sol.fin)}</b><br><br>
+                  DÍAS SOLICITADOS: <b style="color:red;font-size:22px">${diasSolicitados}</b><br>
+                  <span style="white-space:nowrap">DÍAS RESTANTES PERIODO ANTERIOR: <b>${penAntDisplay}</b>${penAnt < 0 ? ` &nbsp;<i style="font-size:11px;color:#1d4ed8;font-weight:700">— Se han tomado ${propConsumidos} de ${sHist} días proporcionales. Restan ${propRestantes} días.</i>` : ''}</span>
+                </div>
+                <div style="text-align:center">
+                  <div style="border:1.5px solid #000;padding:6px;margin-bottom:8px"><small style="font-size:9px;font-weight:900">DISFRUTADOS PREVIOS</small><div style="font-size:20px;font-weight:900">${tPrevios}</div></div>
+                  <div style="border:3px solid #000;padding:10px 8px;background:#f0f0f0;text-align:center">
+                    <div style="font-size:9px;font-weight:900;margin-bottom:8px;text-transform:uppercase">DÍAS RESTANTES TOTALES</div>
+                    <div style="display:inline-grid;grid-template-columns:auto auto auto auto auto;align-items:baseline;column-gap:6px;margin-bottom:0">
+                      <span style="font-size:15px;font-weight:700;text-align:center">${penAntDisplay}</span>
+                      <span style="font-size:12px;color:#555;text-align:center">+</span>
+                      <span style="font-size:15px;font-weight:700;text-align:center">${propRestantes}</span>
+                      <span style="font-size:12px;color:#555;text-align:center">=</span>
+                      <span style="font-size:30px;font-weight:900;color:${totalRestante<0?'#dc2626':'#111'};text-align:center">${totalRestante}</span>
+                      <span style="font-size:9px;color:#777;text-align:center">(Ant.)</span>
+                      <span style="font-size:9px;color:transparent;text-align:center">+</span>
+                      <span style="font-size:9px;color:#777;text-align:center">(Prop.)</span>
+                      <span></span><span></span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+            <div style="width:42%;display:flex;flex-direction:column">
+              <div style="font-size:11px;font-weight:900;text-align:center;background:#ddd;padding:5px;border-bottom:1.5px solid #000">HISTORIAL DE DÍAS TOMADOS</div>
+              <table style="width:100%;font-size:11px;border-collapse:collapse">
+                <thead><tr><th style="background:#eee;border:1px solid #000;padding:4px">INICIO</th><th style="background:#eee;border:1px solid #000;padding:4px">FIN</th><th style="background:#eee;border:1px solid #000;padding:4px">DÍAS</th></tr></thead>
+                <tbody>${htmlHist||'<tr><td colspan="3" style="text-align:center;padding:4px">Sin historial</td></tr>'}</tbody>
+              </table>
+              <div style="text-align:right;font-weight:900;font-size:11px;padding:6px;background:#eee;border-top:1px solid #000;margin-top:auto">Total Tomados: ${totalAcumulado}</div>
+            </div>
+          </div>
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:14px;row-gap:18px;margin-top:14px;flex-shrink:0">
+            <div><div style="border:1.8px solid #000;height:60px;position:relative"><span style="position:absolute;top:3px;left:6px;font-size:9px;font-weight:900;text-transform:uppercase">FIRMA DEL TRABAJADOR</span></div><div style="font-size:11px;font-weight:900;text-align:center;text-transform:uppercase;margin-top:2px">${op.nombre}</div></div>
+            <div><div style="border:1.8px solid #000;height:60px;position:relative"><span style="position:absolute;top:3px;left:6px;font-size:9px;font-weight:900;text-transform:uppercase">Vo. Bo. RECURSOS HUMANOS</span></div></div>
+            <div><div style="border:1.8px solid #000;height:60px;position:relative"><span style="position:absolute;top:3px;left:6px;font-size:9px;font-weight:900;text-transform:uppercase">FIRMA DEL JEFE INMEDIATO</span></div></div>
+            <div><div style="border:1.8px solid #000;height:60px;position:relative"><span style="position:absolute;top:3px;left:6px;font-size:9px;font-weight:900;text-transform:uppercase">Vo. Bo. GERENCIA / DIRECCIÓN</span></div></div>
+          </div>
+        </div>`;
+
+      var styleId = 'cons-print-style';
+      if(!document.getElementById(styleId)){
+        var st = document.createElement('style');
+        st.id = styleId;
+        st.innerHTML = '@media print{body *{visibility:hidden}#cons-print-area,#cons-print-area *{visibility:visible}#cons-print-area{display:block!important;position:absolute;left:0;top:0;width:216mm;height:277mm;padding:8mm;box-sizing:border-box;background:white}@page{size:letter;margin:0}}';
+        document.head.appendChild(st);
+      }
+
+      printArea.style.display = 'block';
+      setTimeout(function(){ window.print(); printArea.style.display = 'none'; }, 800);
+    })
+    .withFailureHandler(function(e){ hideLoader(); rhAlert('error','Error al generar formato',''+e); })
+    .obtenerHistorialPeriodo(idOp);
+}
+
+// ══════════════════════════════════════════════════════════
+//  MÓDULO: MI USUARIO
+// ══════════════════════════════════════════════════════════

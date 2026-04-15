@@ -1,0 +1,265 @@
+function loadVacaciones(){
+  showLoader('Cargando vacaciones...');
+  google.script.run
+    .withSuccessHandler(function(res){
+      hideLoader();
+      vac_trabajadores=res.lista||[];
+      document.getElementById('content-area').innerHTML=
+        '<div class="card-pro">'
+        +'<div id="vac-grid"></div>'
+        +'</div>'
+        +'<!-- MODAL -->'
+        +'<div id="vac-modal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:3000;align-items:center;justify-content:center">'
+        +'<div style="background:white;border-radius:16px;padding:28px;width:100%;max-width:440px;box-shadow:0 25px 50px rgba(0,0,0,.3)">'
+        +'<h5 class="fw-black mb-3" style="color:var(--rh-color)"><i class="fas fa-umbrella-beach me-2"></i>Generar Solicitud</h5>'
+        +'<label class="form-label small fw-bold">TRABAJADOR</label>'
+        +'<input id="vac-modal-nombre" class="form-control mb-3 bg-light" disabled>'
+        +'<div class="row g-2 mb-3">'
+        +'<div class="col"><label class="form-label small fw-bold">FECHA INICIO</label><input type="date" id="vac-ini" class="form-control" onchange="vac_calcular()"></div>'
+        +'<div class="col"><label class="form-label small fw-bold">FECHA FIN</label><input type="date" id="vac-fin" class="form-control" onchange="vac_calcular()"></div>'
+        +'</div>'
+        +'<label class="form-label small fw-bold">DÍAS (sin domingos)</label>'
+        +'<input type="number" id="vac-dias" class="form-control text-center fw-black fs-4 mb-3" style="color:var(--danger)">'
+        +'<label class="form-label small fw-bold">OBSERVACIONES</label>'
+        +'<textarea id="vac-obs" class="form-control mb-3" rows="2"></textarea>'
+        +'<button id="vac-btn-save" class="btn fw-bold w-100 py-2 rounded-3" style="background:var(--rh-color);color:white" onclick="vac_guardar()"><i class="fas fa-save me-2"></i>Guardar y Generar Formato</button>'
+        +'<button class="btn btn-link w-100 text-muted mt-1" onclick="vac_cerrarModal()">Cancelar</button>'
+        +'</div></div>';
+      _headerSearch(true, '🔍 Buscar trabajador...', vac_render, true, vac_exportarExcel);
+      vac_render();
+    })
+    .withFailureHandler(function(e){hideLoader();Swal.fire('Error',''+e,'error');})
+    .obtenerDatosVacaciones();
+}
+function vac_render(){
+  var inp = document.getElementById('header-search-input');
+  var f = (inp ? inp.value : '').toLowerCase();
+  var html='';
+  vac_trabajadores.filter(function(t){return t.nombre.toLowerCase().includes(f);}).forEach(function(t){
+    var pT=Number(t.dispAnt), sT=Number(t.proporcionales), tom=Number(t.diasTomados);
+    var pTom=Math.min(tom,pT), pPend=pT-pTom;
+    var rem=Math.max(0,tom-pT), sTom=Math.min(rem,sT), sPend=sT-sTom;
+    var gran=(pT+sT)-tom;
+    html+='<div class="rh-worker-card">'
+      +'<img src="'+(t.foto||'')+'" onerror="this.src=\'https://ui-avatars.com/api/?name='+encodeURIComponent(t.nombre)+'\'">'
+      +'<div style="flex:1">'
+      +'<div class="fw-bold">'+t.nombre+'</div>'
+      +'<small class="text-muted">Ingreso: '+t.ingreso+'</small>'
+      +'<div class="d-flex gap-2 mt-2 flex-wrap">'
+      +'<div style="background:#e0e7ff;border-radius:8px;padding:6px 10px;text-align:center;min-width:80px">'
+      +'<div style="font-size:.65rem;font-weight:700;color:#3730a3">'+(t.anioAnt||'ANT')+' (P)</div>'
+      +'<div style="font-size:1.3rem;font-weight:900;color:#1a237e">'+pT+'</div>'
+      +'<div style="font-size:.65rem;color:#64748b">Pend: <b>'+pPend+'</b></div>'
+      +'</div>'
+      +'<div style="background:#dcfce7;border-radius:8px;padding:6px 10px;text-align:center;min-width:80px">'
+      +'<div style="font-size:.65rem;font-weight:700;color:#166534">'+(t.anioAct||'ACT')+' (S)</div>'
+      +'<div style="font-size:1.3rem;font-weight:900;color:#166534">'+sT+'</div>'
+      +'<div style="font-size:.65rem;color:#64748b">Pend: <b>'+sPend+'</b></div>'
+      +'</div>'
+      +'<div style="background:#fef3c7;border-radius:8px;padding:6px 10px;text-align:center;min-width:80px">'
+      +'<div style="font-size:.65rem;font-weight:700;color:#92400e">TOTAL</div>'
+      +'<div style="font-size:1.3rem;font-weight:900;color:#d97706">'+gran+'</div>'
+      +'</div>'
+      +'</div>'
+      +'</div>'
+      +'<button class="btn btn-sm fw-bold rounded-pill px-3" style="background:var(--rh-color);color:white;white-space:nowrap" onclick="vac_abrirModal(\''+t.id+'\')">'
+      +'<i class="fas fa-plus me-1"></i>Solicitar</button>'
+      +'</div>';
+  });
+  document.getElementById('vac-grid').innerHTML=html||'<p class="text-center text-muted py-5">Sin resultados</p>';
+}
+function vac_abrirModal(id){
+  vac_activo=vac_trabajadores.find(function(x){return x.id===id;});
+  document.getElementById('vac-modal-nombre').value=vac_activo.nombre;
+  document.getElementById('vac-ini').value='';
+  document.getElementById('vac-fin').value='';
+  document.getElementById('vac-dias').value='';
+  document.getElementById('vac-obs').value='';
+  document.getElementById('vac-btn-save').disabled=false;
+  document.getElementById('vac-modal').style.display='flex';
+}
+function vac_cerrarModal(){document.getElementById('vac-modal').style.display='none';}
+function vac_calcular(){
+  var i=document.getElementById('vac-ini').value, f=document.getElementById('vac-fin').value;
+  if(i&&f){
+    document.getElementById('vac-dias').value='...';
+    google.script.run.withSuccessHandler(function(n){document.getElementById('vac-dias').value=n;}).calcularDiasLaborales(i,f);
+  }
+}
+function vac_guardar(){
+  var btn=document.getElementById('vac-btn-save');btn.disabled=true;
+  var d={idOperador:vac_activo.id,inicio:document.getElementById('vac-ini').value,fin:document.getElementById('vac-fin').value,dias:document.getElementById('vac-dias').value,observaciones:document.getElementById('vac-obs').value};
+  if(!d.inicio||!d.fin||d.dias<=0){Swal.fire('Aviso','Completa las fechas','warning');btn.disabled=false;return;}
+  showLoader('Generando folio...');
+  google.script.run
+    .withSuccessHandler(function(res){
+      hideLoader();
+      vac_cerrarModal();
+      vac_imprimirFormato(res.folio,d);
+      rhAlert('success','Solicitud generada','Folio: '+res.folio,2000);
+      loadVacaciones();
+    })
+    .withFailureHandler(function(e){hideLoader();btn.disabled=false;Swal.fire('Error',''+e,'error');})
+    .guardarSolicitudVacaciones(d);
+}
+function vac_imprimirFormato(folio, d){
+  showLoader('Generando formato...');
+  google.script.run
+    .withSuccessHandler(function(hist){
+      hideLoader();
+
+      var op         = vac_activo;
+      var totalAcum  = 0;
+      // Solo mostrar registros con CONSIDERAR = SI (periodo actual)
+      // obtenerHistorialPeriodo ya filtra por APLICADO+CONSIDERAR=SI, no filtrar de nuevo
+      var histOrdenado = (hist||[]).slice().reverse();
+      var MAX_HIST = 10;
+      var histVisible = histOrdenado.slice(0, MAX_HIST);
+      var htmlHist = histVisible.map(function(x){
+        totalAcum += Number(x.dias);
+        return '<tr><td>'+x.inicio+'</td><td>'+x.fin+'</td><td style="text-align:center">'+x.dias+'</td></tr>';
+      }).join('');
+      // Acumular total real con todos los registros del periodo
+      (histOrdenado.slice(MAX_HIST)).forEach(function(x){ totalAcum += Number(x.dias); });
+
+      var pHist           = Number(op.saldoInicial || 0) || Number(op.dispAnt || 0); // Col P OPERADORES: fijo
+      var sHist           = Number(op.proporcionales || 0);              // Col S OPERADORES
+      var tPrevios        = Number(op.diasTomados    || 0);              // Col T OPERADORES
+      var diasSolicitados = Number(d.dias            || 0);
+      var disfrutanConEsta = tPrevios + diasSolicitados;
+      var penAnt          = pHist - disfrutanConEsta;
+      var penAntDisplay   = Math.max(0, penAnt);
+      var propConsumidos  = penAnt < 0 ? Math.abs(penAnt) : 0;
+      var propRestantes   = Math.max(0, sHist - propConsumidos);
+      var totalRestante   = penAntDisplay + propRestantes;
+
+      var vacPrintArea = document.getElementById('vac-print-area');
+      if(!vacPrintArea){
+        vacPrintArea = document.createElement('div');
+        vacPrintArea.id = 'vac-print-area';
+        vacPrintArea.style.display = 'none';
+        document.body.appendChild(vacPrintArea);
+        var st = document.createElement('style');
+        st.id = 'vac-print-style';
+        st.innerHTML = '@media print{body *{visibility:hidden}#vac-print-area,#vac-print-area *{visibility:visible}#vac-print-area{display:block!important;position:absolute;left:0;top:0;width:216mm;height:277mm;padding:8mm;box-sizing:border-box;background:white}@page{size:letter;margin:0}}';
+        document.head.appendChild(st);
+      }
+
+      vacPrintArea.innerHTML =
+        '<div style="border:2.5px solid #000;width:100%;padding:12px;box-sizing:border-box;display:flex;flex-direction:column;justify-content:space-between;font-family:Roboto,sans-serif;height:100%">'
+
+        // ── HEADER ──
+        +'<div style="display:flex;align-items:center;border:2.5px solid #000;padding:10px">'
+        +'<div style="width:20%"><img src="https://www.toolcn.mx/cdn/shop/files/logo_ToolCN_shopify.png?v=1751677238" width="160"></div>'
+        +'<div style="width:60%;text-align:center">'
+        +'<div style="font-size:18px;font-weight:900">Clavos Nacionales CN SA de CV</div>'
+        +'<div style="font-size:13px;letter-spacing:2px;font-weight:700">SOLICITUD DE VACACIONES</div>'
+        +'</div>'
+        +'<div style="width:20%;border:3px solid #000;text-align:center;padding:5px">'
+        +'<span style="font-size:12px;font-weight:900">FOLIO</span>'
+        +'<div style="color:red;font-size:28px;font-weight:900">'+folio+'</div>'
+        +'</div></div>'
+
+        // ── TÍTULO DATOS TRABAJADOR ──
+        +'<div style="background:#dfdfdf;text-align:center;font-weight:900;font-size:14px;padding:5px;border:1.5px solid #000;margin:8px 0;text-transform:uppercase">Datos del Trabajador</div>'
+
+        // ── TABLA DATOS ──
+        +'<table style="width:100%;border-collapse:collapse">'
+        +'<tr>'
+        +'<td style="border:1.2px solid #000;padding:7px;width:12%"><small style="font-size:9px;font-weight:900;color:#999">CLAVE</small><div><b>'+op.clave+'</b></div></td>'
+        +'<td style="border:1.2px solid #000;padding:7px;width:46%"><small style="font-size:9px;font-weight:900;color:#999">NOMBRE</small><div><b style="font-size:15px">'+op.nombre+'</b></div></td>'
+        +'<td style="border:1.2px solid #000;padding:7px;width:20%"><small style="font-size:9px;font-weight:900;color:#999">F. INGRESO</small><div><b>'+op.ingreso+'</b></div></td>'
+        +'<td style="border:1.2px solid #000;padding:7px;width:22%"><small style="font-size:9px;font-weight:900;color:#999">ÁREA</small><div><b>'+op.area+'</b></div></td>'
+        +'</tr></table>'
+
+        // ── LEYENDA ──
+        +'<p style="text-align:center;font-size:12px;font-style:italic;margin:7px 0">"Por medio de la presente solicito me sean concedidas mis vacaciones de acuerdo al art. No 76 de la Ley Federal del Trabajo"</p>'
+
+        // ── TÍTULO SECCIÓN CENTRAL ──
+        +'<div style="background:#dfdfdf;text-align:center;font-weight:900;font-size:14px;padding:5px;border:1.5px solid #000;margin-bottom:8px;text-transform:uppercase">Datos Generales y Observaciones</div>'
+
+        // ── SECCIÓN CENTRAL ──
+        +'<div style="display:flex;border:1.8px solid #000;flex:1;min-height:0">'
+
+        // Columna izquierda
+        +'<div style="width:58%;padding:14px;border-right:1.8px solid #000;display:flex;flex-direction:column;gap:8px">'
+        +'<div style="font-size:13px;margin-bottom:6px"><b>COMENTARIOS:</b> <span style="border-bottom:1.8px solid #000;padding:0 10px">'+(d.observaciones||d.obs||'N/A')+'</span></div>'
+        +'<div style="font-size:13px">DÍAS ARRANQUE PERIODO ANTERIOR (P): <b>'+pHist+'</b></div>'
+        +'<div style="font-size:13px">DÍAS PROPORCIONALES PRÓXIMO PERIODO (S): <b>'+sHist+'</b></div>'
+        +'<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:8px">'
+        +'<div style="font-size:13px;line-height:2">'
+        +'FECHA DE INICIO:<br><b>'+_consFmtFecha(d.inicio)+'</b><br><br>'
+        +'FECHA DE REGRESO:<br><b>'+_consFmtFecha(d.fin)+'</b><br><br>'
+        +'DÍAS SOLICITADOS: <b style="color:red;font-size:22px;font-weight:900">'+diasSolicitados+'</b><br>'
+        +'<span style="white-space:nowrap">DÍAS RESTANTES PERIODO ANTERIOR: <b>'+penAntDisplay+'</b></span>'
+        +(penAnt < 0
+          ? ' &nbsp;<i style="font-size:11px;color:#1d4ed8;font-weight:700">— Se han tomado '+propConsumidos+' de '+sHist+' días proporcionales. Restan '+propRestantes+' días.</i>'
+          : '')
+        +'</div>'
+        +'<div style="text-align:center">'
+        +'<div style="border:1.5px solid #000;padding:6px;margin-bottom:8px"><div style="font-size:9px;font-weight:900">DISFRUTADOS PREVIOS</div><div style="font-size:20px;font-weight:900">'+tPrevios+'</div></div>'
+        +'<div style="border:3px solid #000;padding:10px 8px;background:#f0f0f0;text-align:center">'
+        +'<div style="font-size:9px;font-weight:900;margin-bottom:8px;text-transform:uppercase">DÍAS RESTANTES TOTALES</div>'
+        +'<div style="display:inline-grid;grid-template-columns:auto auto auto auto auto;align-items:baseline;column-gap:6px;margin-bottom:0">'
+        +'<span style="font-size:15px;font-weight:700;text-align:center">'+penAntDisplay+'</span>'
+        +'<span style="font-size:12px;color:#555;text-align:center">+</span>'
+        +'<span style="font-size:15px;font-weight:700;text-align:center">'+propRestantes+'</span>'
+        +'<span style="font-size:12px;color:#555;text-align:center">=</span>'
+        +'<span style="font-size:30px;font-weight:900;color:'+(totalRestante<0?'#dc2626':'#111')+';text-align:center">'+totalRestante+'</span>'
+        +'<span style="font-size:9px;color:#777;text-align:center">(Ant.)</span>'
+        +'<span style="font-size:9px;color:transparent;text-align:center">+</span>'
+        +'<span style="font-size:9px;color:#777;text-align:center">(Prop.)</span>'
+        +'<span></span><span></span>'
+        +'</div>'
+        +'</div>'
+        +'</div></div></div>'
+
+        // Columna derecha — historial
+        +'<div style="width:42%;display:flex;flex-direction:column;overflow:hidden">'
+        +'<div style="font-size:11px;font-weight:900;text-align:center;background:#ddd;padding:5px;border-bottom:1.5px solid #000">HISTORIAL DE DÍAS TOMADOS</div>'
+        +(histOrdenado.length > MAX_HIST ? '<div style="font-size:8px;text-align:center;color:#888;padding:2px 0;background:#fafafa;border-bottom:1px solid #ddd">Mostrando últimos '+MAX_HIST+' de '+histOrdenado.length+' registros</div>' : '')
+        +'<div style="overflow:hidden;flex:1">'
+        +'<table style="width:100%;font-size:10px;border-collapse:collapse;table-layout:fixed">'
+        +'<thead><tr>'
+        +'<th style="background:#eee;border:1px solid #000;padding:3px;width:38%">INICIO</th>'
+        +'<th style="background:#eee;border:1px solid #000;padding:3px;width:38%">FIN</th>'
+        +'<th style="background:#eee;border:1px solid #000;padding:3px;width:24%">DÍAS</th>'
+        +'</tr></thead>'
+        +'<tbody>'+(htmlHist||'<tr><td colspan="3" style="text-align:center;padding:4px">Sin historial</td></tr>')+'</tbody>'
+        +'</table>'
+        +'</div>'
+        +'<div style="text-align:right;font-weight:900;font-size:11px;padding:6px;background:#eee;border-top:1px solid #000">Total Tomados: '+totalAcum+'</div>'
+        +'</div></div>'
+
+        // ── FIRMAS ──
+        +'<div style="display:grid;grid-template-columns:1fr 1fr;gap:14px;row-gap:18px;margin-top:14px;flex-shrink:0">'
+        +'<div><div style="border:1.8px solid #000;height:60px;position:relative"><span style="position:absolute;top:3px;left:6px;font-size:9px;font-weight:900;text-transform:uppercase">FIRMA DEL TRABAJADOR</span></div>'
+        +'<div style="font-size:11px;font-weight:900;text-align:center;text-transform:uppercase;margin-top:2px">'+op.nombre+'</div></div>'
+        +'<div><div style="border:1.8px solid #000;height:60px;position:relative"><span style="position:absolute;top:3px;left:6px;font-size:9px;font-weight:900;text-transform:uppercase">Vo. Bo. RECURSOS HUMANOS</span></div></div>'
+        +'<div><div style="border:1.8px solid #000;height:60px;position:relative"><span style="position:absolute;top:3px;left:6px;font-size:9px;font-weight:900;text-transform:uppercase">FIRMA DEL JEFE INMEDIATO</span></div></div>'
+        +'<div><div style="border:1.8px solid #000;height:60px;position:relative"><span style="position:absolute;top:3px;left:6px;font-size:9px;font-weight:900;text-transform:uppercase">Vo. Bo. GERENCIA / DIRECCIÓN</span></div></div>'
+        +'</div>'
+
+        +'</div>';
+
+      vacPrintArea.style.display = 'block';
+      setTimeout(function(){ window.print(); vacPrintArea.style.display = 'none'; }, 700);
+    })
+    .withFailureHandler(function(e){ hideLoader(); rhAlert('error','Error al generar formato',''+e); })
+    .obtenerHistorialPeriodo(vac_activo.id);
+}
+function vac_exportarExcel(){
+  var rows=vac_trabajadores.map(function(t){
+    var pT=Number(t.dispAnt),sT=Number(t.proporcionales),tT=Number(t.diasTomados);
+    var pendP=pT-Math.min(tT,pT);
+    return{'NOMBRE':t.nombre,'INGRESO':t.ingreso,'PERIODO ANT (P)':pT,'PROPORCIONAL (S)':sT,'TOMADOS':tT,'SALDO PEND P':pendP,'TOTAL DISP':(pT+sT)-tT};
+  });
+  var ws=XLSX.utils.json_to_sheet(rows),wb=XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb,ws,'Vacaciones');
+  XLSX.writeFile(wb,'Reporte_Vacaciones_'+new Date().toLocaleDateString()+'.xlsx');
+}
+
+// ══════════════════════════════════════════════════════════
+//  MÓDULO: AUTORIZAR VACACIONES
+// ══════════════════════════════════════════════════════════
+var aut_solicitudes=[], aut_seleccionados=new Set();

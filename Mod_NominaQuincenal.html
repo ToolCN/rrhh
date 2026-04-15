@@ -1,0 +1,444 @@
+function loadNominaQuincenal(){ _nomLoadMain('QUINCENAL'); }
+
+function _nomLoadMain(tipo){
+  var titulo  = tipo==='QUINCENAL'?'Nómina Quincenal':'Nómina Semanal';
+  var icono   = tipo==='QUINCENAL'?'fa-money-bill-wave':'fa-money-check-alt';
+  var tipoLC  = tipo.toLowerCase();
+
+  document.getElementById('content-area').innerHTML=
+    '<div class="card-pro mb-3">'
+    +'<div class="d-flex justify-content-between align-items-center mb-4">'
+    +'<div class="d-flex align-items-center gap-3">'
+    +'<div style="width:48px;height:48px;border-radius:12px;background:#16a34a20;display:flex;align-items:center;justify-content:center">'
+    +'<i class="fas '+icono+'" style="color:#16a34a;font-size:1.4rem"></i></div>'
+    +'<div><h5 class="fw-bold m-0">'+titulo+'</h5>'
+    +'<p class="text-muted small m-0">Carga masiva desde Excel y consulta</p></div></div></div>'
+
+    // ─── Tabs ──────────────────────────────────────────────────────
+    +'<ul class="nav nav-pills mb-4" id="nom-tabs-'+tipoLC+'">'
+    +'<li class="nav-item"><button class="nav-link active" onclick="_nomTab(\''+tipo+'\',\'upload\')" id="tab-upload-'+tipoLC+'">'
+    +'<i class="fas fa-upload me-2"></i>Cargar Excel</button></li>'
+    +'<li class="nav-item"><button class="nav-link" onclick="_nomTab(\''+tipo+'\',\'consulta\')" id="tab-consulta-'+tipoLC+'">'
+    +'<i class="fas fa-table me-2"></i>Consulta y Edición</button></li>'
+    +'</ul>'
+
+    // ─── Panel Upload ──────────────────────────────────────────────
+    +'<div id="nom-panel-upload-'+tipoLC+'">'
+    +'<div class="row g-3 justify-content-center">'
+    +'<div class="col-md-7">'
+    +(function(){
+      var borde  = tipo==='QUINCENAL'?'#ca8a04':'#16a34a';
+      var fondo  = tipo==='QUINCENAL'?'#fefce8':'#f0fdf4';
+      var hover  = tipo==='QUINCENAL'?'#fef08a':'#dcfce7';
+      var color  = tipo==='QUINCENAL'?'#854d0e':'#16a34a';
+      return '<div id="nom-drop-'+tipoLC+'" style="border:2px dashed '+borde+';border-radius:12px;padding:36px;text-align:center;cursor:pointer;background:'+fondo+';transition:.2s"'
+        +' onclick="document.getElementById(\'nom-file-'+tipoLC+'\').click()"'
+        +' ondragover="event.preventDefault();this.style.background=\''+hover+'\'"'
+        +' ondragleave="this.style.background=\''+fondo+'\'"'
+        +' ondrop="_nomOnDrop(event,\''+tipo+'\')">'
+        +'<i class="fas fa-file-excel" style="font-size:2.5rem;color:'+color+';margin-bottom:12px;display:block"></i>'
+        +'<p class="fw-bold mb-1" style="color:'+color+'">Arrastra tu Excel aquí</p>';
+    })()
+    +'<p class="text-muted small mb-0">o haz clic para seleccionar archivo (.xlsx, .xls, .csv)</p>'
+    +'</div>'
+    +'<input type="file" id="nom-file-'+tipoLC+'" accept=".xlsx,.xls,.csv" style="display:none" onchange="_nomOnFile(event,\''+tipo+'\')">'
+    +'</div>'
+    +'<div class="col-md-5">'
+    +'<div class="card border-0" style="background:#f8fafc;border-radius:10px;padding:16px">'
+    +'<p class="fw-bold small mb-2" style="color:#16a34a"><i class="fas fa-info-circle me-1"></i>Columnas requeridas en Excel</p>'
+    +'<div style="font-size:.8rem;font-family:monospace;line-height:1.8;color:#475569">'
+    +'FECHA &nbsp;·&nbsp; SEMANA &nbsp;·&nbsp; MES<br>'
+    +'CLAVE &nbsp;·&nbsp; NOMBRE<br>'
+    +'SAL_DIA &nbsp;·&nbsp; DIAS_LAB<br>'
+    +'TIEMPO_EXTRA &nbsp;·&nbsp; FISCAL<br>'
+    +'CAFI &nbsp;·&nbsp; NETO'
+    +'</div>'
+    +'<p class="small text-muted mt-2 mb-0">AREA se obtiene automáticamente de OPERADORES.</p>'
+    +'</div>'
+    +'</div>'
+    +'</div>'
+    +'<div id="nom-preview-'+tipoLC+'" class="mt-4"></div>'
+    +'</div>'
+
+    // ─── Panel Consulta ────────────────────────────────────────────
+    +'<div id="nom-panel-consulta-'+tipoLC+'" style="display:none">'
+    +'<div id="nom-consulta-body-'+tipoLC+'"><div class="text-center text-muted py-5"><i class="fas fa-search fa-2x mb-2 d-block opacity-50"></i>Selecciona un rango de fechas para consultar.</div></div>'
+    +'</div>'
+    +'</div>';
+
+  // Renderizar controles de consulta iniciales
+  _nomRenderFiltros(tipo);
+}
+
+function _nomTab(tipo, tab){
+  var tipoLC=tipo.toLowerCase();
+  document.getElementById('nom-panel-upload-'+tipoLC).style.display  =tab==='upload'  ?'':'none';
+  document.getElementById('nom-panel-consulta-'+tipoLC).style.display=tab==='consulta'?'':'none';
+  document.getElementById('tab-upload-'+tipoLC).classList[tab==='upload'?'add':'remove']('active');
+  document.getElementById('tab-consulta-'+tipoLC).classList[tab==='consulta'?'add':'remove']('active');
+  if(tab==='consulta') _nomRenderFiltros(tipo);
+}
+
+function _nomRenderFiltros(tipo){
+  var tipoLC=tipo.toLowerCase();
+  var bodyEl=document.getElementById('nom-consulta-body-'+tipoLC);
+  if(!bodyEl) return;
+  bodyEl.innerHTML=
+    '<div class="row g-2 mb-3 align-items-end">'
+    +'<div class="col-md-3"><label class="form-label small fw-bold">Fecha inicio</label>'
+    +'<input id="nom-fi-'+tipoLC+'" type="date" class="form-control form-control-sm" value="'+_nom30diasAtras()+'"></div>'
+    +'<div class="col-md-3"><label class="form-label small fw-bold">Fecha fin</label>'
+    +'<input id="nom-ff-'+tipoLC+'" type="date" class="form-control form-control-sm" value="'+_nomHoy()+'"></div>'
+    +'<div class="col-md-2"><button class="btn btn-sm fw-bold w-100" style="background:#16a34a;color:white" onclick="_nomConsultar(\''+tipo+'\')">'
+    +'<i class="fas fa-search me-1"></i>Consultar</button></div>'
+    +'<div class="col-md-2"><button class="btn btn-sm btn-outline-secondary w-100" id="nom-btn-export-'+tipoLC+'" style="display:none" onclick="_nomExportar(\''+tipo+'\')">'
+    +'<i class="fas fa-file-excel me-1"></i>Exportar</button></div>'
+    +'</div>'
+    +'<div id="nom-tabla-'+tipoLC+'"></div>';
+}
+
+function _nomConsultar(tipo){
+  var tipoLC=tipo.toLowerCase();
+  var fi=document.getElementById('nom-fi-'+tipoLC).value;
+  var ff=document.getElementById('nom-ff-'+tipoLC).value;
+  var fiFmt=fi?fi.split('-').reverse().join('/'):'';
+  var ffFmt=ff?ff.split('-').reverse().join('/'):'';
+  showLoader('Consultando nómina...');
+  google.script.run
+    .withSuccessHandler(function(lista){
+      hideLoader();
+      window['_nomCache_'+tipoLC]=lista||[];
+      _nomRenderTabla(tipo, lista||[]);
+    })
+    .withFailureHandler(function(e){hideLoader();Swal.fire('Error',''+e,'error');})
+    .consultarNomina({tipo:tipo, fechaInicio:fiFmt, fechaFin:ffFmt});
+}
+
+function _nomRenderTabla(tipo, lista){
+  var tipoLC=tipo.toLowerCase();
+  var tablaEl=document.getElementById('nom-tabla-'+tipoLC);
+  var btnExp=document.getElementById('nom-btn-export-'+tipoLC);
+  if(!tablaEl) return;
+
+  if(!lista.length){
+    tablaEl.innerHTML='<div class="text-center text-muted py-5">Sin registros en ese rango de fechas.</div>';
+    if(btnExp) btnExp.style.display='none';
+    return;
+  }
+
+  // Totales
+  var totDias=0, totTE=0, totFisc=0, totCafi=0, totNeto=0;
+  lista.forEach(function(r){
+    totDias+=Number(r.diasLab||0); totTE+=Number(r.tiempoExtra||0);
+    totFisc+=Number(r.fiscal||0);  totCafi+=Number(r.cafi||0); totNeto+=Number(r.neto||0);
+  });
+
+  if(btnExp) btnExp.style.display='';
+
+  tablaEl.innerHTML=
+    '<div class="row g-2 mb-3">'
+    +'<div class="col-md-2"><div class="stat-card" style="border-left-color:#16a34a"><div class="stat-val" style="color:#16a34a">'+lista.length+'</div><div class="stat-label">Registros</div></div></div>'
+    +'<div class="col-md-2"><div class="stat-card" style="border-left-color:#0369a1"><div class="stat-val" style="color:#0369a1">'+totDias.toFixed(1)+'</div><div class="stat-label">Días Trabajados</div></div></div>'
+    +'<div class="col-md-2"><div class="stat-card" style="border-left-color:#7c3aed"><div class="stat-val" style="color:#7c3aed">'+_nomPeso(totFisc)+'</div><div class="stat-label">Total Fiscal</div></div></div>'
+    +'<div class="col-md-2"><div class="stat-card" style="border-left-color:#ea580c"><div class="stat-val" style="color:#ea580c">'+_nomPeso(totCafi)+'</div><div class="stat-label">Total CAFI</div></div></div>'
+    +'<div class="col-md-4"><div class="stat-card" style="border-left-color:#16a34a"><div class="stat-val" style="color:#16a34a;font-size:1.3rem">'+_nomPeso(totNeto)+'</div><div class="stat-label">Total NETO</div></div></div>'
+    +'</div>'
+    +'<div class="table-responsive" style="max-height:500px;overflow-y:auto">'
+    +'<table class="table table-hover table-sm align-middle" style="font-size:.82rem">'
+    +'<thead class="table-light" style="position:sticky;top:0;z-index:1">'
+    +'<tr><th style="width:90px">Fecha</th><th>Semana</th><th>Mes</th><th style="width:80px">Clave</th>'
+    +'<th style="min-width:140px">Nombre</th><th>Área</th>'
+    +'<th class="text-end">Sal/Día</th><th class="text-end">Días</th>'
+    +'<th class="text-end">T.Extra</th><th class="text-end">Fiscal</th>'
+    +'<th class="text-end">CAFI</th><th class="text-end fw-bold">NETO</th>'
+    +'<th style="width:70px"></th></tr></thead><tbody>'
+    +(_rhSet('nom_'+tipo,lista),lista.map(function(r,idx){return _nomRow(r,idx,tipo);})).join('')+(_nomBindEvents(tipo),'')
+    +'</tbody></table></div>';
+}
+
+function _nomRow(r,idx,tipo){
+  return '<tr id="nom-row-'+tipo+'-'+idx+'">'
+    +'<td class="small">'+_nomFmtDate(r.fecha)+'</td>'
+    +'<td class="small">'+r.semana+'</td>'
+    +'<td class="small">'+r.mes+'</td>'
+    +'<td class="small fw-bold">'+r.clave+'</td>'
+    +'<td class="small">'+r.nombre+'</td>'
+    +'<td class="text-muted small">'+r.area+'</td>'
+    +'<td class="text-end small">'+_nomPeso(r.salDia)+'</td>'
+    +'<td class="text-end small">'+_nomFmt2(r.diasLab)+'</td>'
+    +'<td class="text-end small">'+_nomFmt2(r.tiempoExtra)+'</td>'
+    +'<td class="text-end small">'+_nomPeso(r.fiscal)+'</td>'
+    +'<td class="text-end small">'+_nomPeso(r.cafi)+'</td>'
+    +'<td class="text-end fw-bold" style="color:#16a34a;white-space:nowrap">'+_nomPeso(r.neto)+'</td>'
+    +'<td><button class="btn btn-sm btn-outline-warning rounded-pill p-1" style="font-size:.65rem"'
+    +' data-accion="nom-editar" data-tipo="'+tipo+'" data-idx="'+idx+'"><i class="fas fa-edit"></i></button></td></tr>';
+}
+
+function _nomBindEvents(tipo){
+  setTimeout(function(){
+    var area=document.getElementById('content-area');
+    if(!area) return;
+    area.addEventListener('click',function(ev){
+      var btn=ev.target.closest('[data-accion="nom-editar"]');
+      if(!btn) return;
+      var t=btn.getAttribute('data-tipo');
+      var i=parseInt(btn.getAttribute('data-idx'),10);
+      _nomEditarModal(_rhGet('nom_'+t,i),i,t);
+    },{once:true});
+  },0);
+}
+function _teBindEvents(){
+  setTimeout(function(){
+    var area=document.getElementById('content-area');
+    if(!area) return;
+    area.addEventListener('click',function(ev){
+      var btn=ev.target.closest('[data-accion="te-editar"]');
+      if(!btn) return;
+      var i=parseInt(btn.getAttribute('data-idx'),10);
+      _teEditarModal(_rhGet('te',i),i);
+    },{once:true});
+  },0);
+}
+
+
+function _nomEditarModal(r, idx, tipo){
+  Swal.fire({
+    title: 'Editar registro',
+    width: '680px',
+    html:
+      '<div class="text-start row g-2" style="font-size:.85rem">'
+      +'<div class="col-3"><label class="form-label small fw-bold">Fecha</label>'
+      +'<input id="ne-fecha" class="form-control form-control-sm" value="'+r.fecha+'"></div>'
+      +'<div class="col-3"><label class="form-label small fw-bold">Semana</label>'
+      +'<input id="ne-semana" class="form-control form-control-sm" value="'+r.semana+'"></div>'
+      +'<div class="col-3"><label class="form-label small fw-bold">Mes</label>'
+      +'<input id="ne-mes" class="form-control form-control-sm" value="'+r.mes+'"></div>'
+      +'<div class="col-3"><label class="form-label small fw-bold">Clave</label>'
+      +'<input id="ne-clave" class="form-control form-control-sm" value="'+r.clave+'"></div>'
+      +'<div class="col-6"><label class="form-label small fw-bold">Nombre</label>'
+      +'<input id="ne-nombre" class="form-control form-control-sm" value="'+r.nombre+'"></div>'
+      +'<div class="col-6"><label class="form-label small fw-bold">Área</label>'
+      +'<input id="ne-area" class="form-control form-control-sm" value="'+r.area+'"></div>'
+      +'<div class="col-3"><label class="form-label small fw-bold">Sal/Día</label>'
+      +'<input id="ne-saldia" type="number" step="0.01" class="form-control form-control-sm" value="'+r.salDia+'"></div>'
+      +'<div class="col-3"><label class="form-label small fw-bold">Días Lab</label>'
+      +'<input id="ne-dias" type="number" step="0.5" class="form-control form-control-sm" value="'+r.diasLab+'"></div>'
+      +'<div class="col-3"><label class="form-label small fw-bold">T. Extra</label>'
+      +'<input id="ne-te" type="number" step="0.01" class="form-control form-control-sm" value="'+r.tiempoExtra+'"></div>'
+      +'<div class="col-3"><label class="form-label small fw-bold">Fiscal</label>'
+      +'<input id="ne-fiscal" type="number" step="0.01" class="form-control form-control-sm" value="'+r.fiscal+'"></div>'
+      +'<div class="col-3"><label class="form-label small fw-bold">CAFI</label>'
+      +'<input id="ne-cafi" type="number" step="0.01" class="form-control form-control-sm" value="'+r.cafi+'"></div>'
+      +'<div class="col-3"><label class="form-label small fw-bold">NETO</label>'
+      +'<input id="ne-neto" type="number" step="0.01" class="form-control form-control-sm" value="'+r.neto+'"></div>'
+      +'</div>',
+    showCancelButton: true,
+    confirmButtonText: '<i class="fas fa-save me-1"></i>Guardar',
+    cancelButtonText: 'Cancelar',
+    confirmButtonColor: '#16a34a',
+    preConfirm: function(){
+      return {
+        fecha:       document.getElementById('ne-fecha').value,
+        semana:      document.getElementById('ne-semana').value,
+        mes:         document.getElementById('ne-mes').value,
+        clave:       document.getElementById('ne-clave').value,
+        nombre:      document.getElementById('ne-nombre').value,
+        area:        document.getElementById('ne-area').value,
+        salDia:      document.getElementById('ne-saldia').value,
+        diasLab:     document.getElementById('ne-dias').value,
+        tiempoExtra: document.getElementById('ne-te').value,
+        fiscal:      document.getElementById('ne-fiscal').value,
+        cafi:        document.getElementById('ne-cafi').value,
+        neto:        document.getElementById('ne-neto').value
+      };
+    }
+  }).then(function(res){
+    if(!res.isConfirmed) return;
+    toggleSaving(true,'Guardando cambios...');
+    google.script.run
+      .withSuccessHandler(function(ok){
+        toggleSaving(false);
+        if(ok==='OK'){
+          rhToast('success','✅ Registro guardado');
+          setTimeout(function(){_nomConsultar(tipo);},1100);
+        } else { Swal.fire('Error',ok,'error'); }
+      })
+      .withFailureHandler(function(e){toggleSaving(false);Swal.fire('Error',''+e,'error');})
+      .editarFilaNomina({tipo:tipo, rowIndex:r.rowIndex, campos:res.value});
+  });
+}
+
+// ── Exportar a Excel ─────────────────────────────────────────────────
+function _nomExportar(tipo){
+  _nomCargarSheetJS(function(){
+    var tipoLC=tipo.toLowerCase();
+    var lista=window['_nomCache_'+tipoLC]||[];
+    if(!lista.length){Swal.fire('Sin datos','Consulta primero un rango de fechas.','info');return;}
+    var ws_data=[['Fecha','Semana','Mes','Clave','Nombre','Área','Sal/Día','Días Lab','T.Extra','Fiscal','CAFI','NETO']];
+    lista.forEach(function(r){
+      ws_data.push([r.fecha,r.semana,r.mes,r.clave,r.nombre,r.area,r.salDia,r.diasLab,r.tiempoExtra,r.fiscal,r.cafi,r.neto]);
+    });
+    var ws  = XLSX.utils.aoa_to_sheet(ws_data);
+    var wb  = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, tipo==='QUINCENAL'?'Quincenal':'Semanal');
+    XLSX.writeFile(wb, 'Nomina_'+tipo+'_'+tipoLC+'.xlsx');
+  });
+}
+
+// ── Drag & Drop + File input ─────────────────────────────────────────
+function _nomOnDrop(ev, tipo){
+  ev.preventDefault();
+  var file=ev.dataTransfer.files[0];
+  if(file) _nomProcesarArchivo(file, tipo);
+}
+function _nomOnFile(ev, tipo){
+  var file=ev.target.files[0];
+  if(file) _nomProcesarArchivo(file, tipo);
+}
+
+
+// ── Sanitizar fila antes de enviar a GAS ─────────────────────────────
+// GAS rechaza objetos Date, undefined, Infinity, NaN — todo debe ser
+// string o número primitivo.
+function _nomSanitizarFila(row) {
+  var out = {};
+  Object.keys(row).forEach(function(k) {
+    var v = row[k];
+    if (v === null || v === undefined) { out[k] = ''; return; }
+    // Objeto Date (de SheetJS cellDates:true) → string dd/mm/yyyy
+    if (v instanceof Date && !isNaN(v.getTime())) {
+      var d = v;
+      out[k] = ('0'+d.getDate()).slice(-2)+'/'+('0'+(d.getMonth()+1)).slice(-2)+'/'+d.getFullYear();
+      return;
+    }
+    // Número serial de Excel (>40000 = post 2009) → convertir
+    if (typeof v === 'number' && v > 40000 && v < 60000 && String(k).toUpperCase()==='FECHA') {
+      var epoch = new Date(Math.round((v - 25569) * 86400000));
+      out[k] = ('0'+epoch.getUTCDate()).slice(-2)+'/'+('0'+(epoch.getUTCMonth()+1)).slice(-2)+'/'+epoch.getUTCFullYear();
+      return;
+    }
+    // Número normal → dejar como número (no convertir a string)
+    if (typeof v === 'number') { out[k] = isFinite(v) ? v : 0; return; }
+    // String → limpiar
+    out[k] = String(v);
+  });
+  return out;
+}
+
+// ── Formatear moneda para preview ────────────────────────────────────
+function _nomFmtPeso(v) {
+  var n = Number(v);
+  if (isNaN(n)) return v || '—';
+  return '$' + n.toLocaleString('es-MX', {minimumFractionDigits:2, maximumFractionDigits:2});
+}
+
+// ── Formatear fecha desde valor crudo de Excel (para preview) ────────
+function _nomFmtFechaRaw(v) {
+  if (!v && v !== 0) return '—';
+  if (v instanceof Date && !isNaN(v.getTime())) {
+    return ('0'+v.getDate()).slice(-2)+'/'+('0'+(v.getMonth()+1)).slice(-2)+'/'+v.getFullYear();
+  }
+  var n = Number(v);
+  if (!isNaN(n) && n > 40000 && n < 60000) {
+    var e = new Date(Math.round((n - 25569)*86400000));
+    return ('0'+e.getUTCDate()).slice(-2)+'/'+('0'+(e.getUTCMonth()+1)).slice(-2)+'/'+e.getUTCFullYear();
+  }
+  return String(v);
+}
+
+function _nomProcesarArchivo(file, tipo){
+  _nomCargarSheetJS(function(){
+    var reader=new FileReader();
+    reader.onload=function(e){
+      try {
+        // SIN cellDates para evitar objetos Date que GAS rechaza
+        var wb   = XLSX.read(e.target.result, {type:'array', cellDates:false});
+        var ws   = wb.Sheets[wb.SheetNames[0]];
+        var json = XLSX.utils.sheet_to_json(ws, {defval:'', raw:true});
+        var filas=json.map(function(row){
+          // 1) Normalizar claves a UPPERCASE
+          var r={};
+          Object.keys(row).forEach(function(k){ r[k.trim().toUpperCase()]=row[k]; });
+          // 2) Sanitizar valores (fechas, undefined, NaN, etc.)
+          return _nomSanitizarFila(r);
+        });
+        _nomMostrarPreview(filas, tipo);
+      } catch(err){
+        Swal.fire('Error al leer archivo',''+err,'error');
+      }
+    };
+    reader.readAsArrayBuffer(file);
+  });
+}
+
+function _nomMostrarPreview(filas, tipo){
+  var tipoLC=tipo.toLowerCase();
+  var prevEl=document.getElementById('nom-preview-'+tipoLC);
+  if(!prevEl) return;
+  if(!filas.length){
+    prevEl.innerHTML='<div class="alert alert-warning">El archivo está vacío o no tiene el formato esperado.</div>';
+    return;
+  }
+
+  // Mostrar primeras 5 filas como preview
+  var preview=filas.slice(0,5);
+  var cols=['FECHA','SEMANA','MES','CLAVE','NOMBRE','SAL_DIA','DIAS_LAB','TIEMPO_EXTRA','FISCAL','CAFI','NETO'];
+
+  prevEl.innerHTML=
+    '<div class="card border-0 rounded-3" style="background:#f0fdf4;padding:16px">'
+    +'<div class="d-flex justify-content-between align-items-center mb-3">'
+    +'<p class="fw-bold mb-0" style="color:#16a34a"><i class="fas fa-check-circle me-2"></i>'+filas.length+' filas detectadas — Vista previa (primeras 5)</p>'
+    +'<button class="btn fw-bold rounded-pill px-4" style="background:#16a34a;color:white" onclick="_nomCargarAlServidor(window._nomFilasPrev,\''+tipo+'\')">'
+    +'<i class="fas fa-cloud-upload-alt me-2"></i>Cargar '+filas.length+' registros</button>'
+    +'</div>'
+    +'<div class="table-responsive">'
+    +'<table class="table table-sm table-bordered" style="font-size:.78rem"><thead class="table-success"><tr>'
+    +cols.map(function(c){return '<th>'+c+'</th>';}).join('')
+    +'<th>ÁREA (auto)</th></tr></thead><tbody>'
+    +preview.map(function(r){
+      return '<tr>'+cols.map(function(c){
+        var v=r[c]!==undefined?r[c]:(r[c.toLowerCase()]!==undefined?r[c.toLowerCase()]:'');
+        var disp;
+        if(c==='FECHA') disp=_nomFmtFechaRaw(v);
+        else if(['SAL_DIA','FISCAL','CAFI','NETO'].indexOf(c)>-1) disp=_nomFmtPeso(v);
+        else disp=v===''||v===null||v===undefined?'—':v;
+        return '<td>'+disp+'</td>';
+      }).join('')+'<td class="text-muted fst-italic">auto</td></tr>';
+    }).join('')
+    +'</tbody></table></div>'
+    +(filas.length>5?'<p class="text-muted small mb-0">...y '+(filas.length-5)+' filas más.</p>':'')
+    +'</div>';
+
+  window._nomFilasPrev = filas;
+}
+
+function _nomCargarAlServidor(filas, tipo){
+  if(!filas||!filas.length){Swal.fire('Sin datos','No hay filas para cargar.','warning');return;}
+  Swal.fire({
+    title:'¿Cargar '+filas.length+' registros?',
+    text:'Se agregarán a la tabla '+tipo+'. No se eliminarán datos existentes.',
+    icon:'question',showCancelButton:true,
+    confirmButtonText:'Sí, cargar',confirmButtonColor:'#16a34a',cancelButtonText:'Cancelar'
+  }).then(function(r){
+    if(!r.isConfirmed) return;
+    toggleSaving(true,'Cargando '+filas.length+' registros...');
+    google.script.run
+      .withSuccessHandler(function(res){
+        toggleSaving(false);
+        rhAlert('success','✅ Archivo cargado correctamente',res.msg||'',2500);
+        window._nomFilasPrev=null;
+        // Limpiar preview y file input
+        var tipoLC=tipo.toLowerCase();
+        var prev=document.getElementById('nom-preview-'+tipoLC);
+        if(prev) prev.innerHTML='';
+        var fi=document.getElementById('nom-file-'+tipoLC);
+        if(fi) fi.value='';
+      })
+      .withFailureHandler(function(e){toggleSaving(false);Swal.fire('Error',''+e,'error');})
+      .cargarNominaMasiva({tipo:tipo, filas:filas});
+  });
+}
+
+// ══════════════════════════════════════════════════════════════════════
+//  TIEMPO EXTRA
+// ══════════════════════════════════════════════════════════════════════

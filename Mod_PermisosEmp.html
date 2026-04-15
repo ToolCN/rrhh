@@ -1,0 +1,175 @@
+function loadPermisosEmp(){
+  inc_mes  = new Date().getMonth();
+  inc_anio = new Date().getFullYear();
+  showLoader('Cargando módulo de Permisos...');
+  google.script.run
+    .withSuccessHandler(function(cat){
+      hideLoader();
+      _incCat=cat.empleados||[];
+      renderFormPermiso();
+      // Cargar contador de pendientes
+      google.script.run
+        .withSuccessHandler(function(lista){
+          var pend=(lista||[]).filter(function(r){return (r.estatus||'').toUpperCase()==='PENDIENTE';}).length;
+          var badge=document.getElementById('per-badge-pendientes');
+          if(badge){
+            if(pend>0){ badge.innerText='⚠️ '+pend+' permiso'+(pend===1?'':'s')+' pendiente'+(pend===1?'':'s'); badge.style.display='inline'; }
+            else { badge.style.display='none'; }
+          }
+        })
+        .withFailureHandler(function(){})
+        .obtenerPermisosEmpleados({});
+    })
+    .withFailureHandler(function(e){hideLoader();Swal.fire('Error',''+e,'error');})
+    .obtenerCatalogosIncidencias();
+}
+
+function renderFormPermiso(){
+  var optsTPerm = TIPOS_PERMISO.map(function(t){
+    return '<option value="'+t.id+'">'+t.label+'</option>';
+  }).join('');
+
+  document.getElementById('content-area').innerHTML=
+    '<div class="card-pro mb-3">'
+    +'<div class="d-flex justify-content-between align-items-center mb-4">'
+    +'<div class="d-flex align-items-center gap-3">'
+    +'<div style="width:48px;height:48px;border-radius:12px;background:#ea580c20;display:flex;align-items:center;justify-content:center">'
+    +'<i class="fas fa-calendar-minus" style="color:#ea580c;font-size:1.4rem"></i></div>'
+    +'<div><h5 class="fw-bold m-0">Solicitar Permiso</h5>'
+    +'<p class="text-muted small m-0">Registra el permiso del empleado</p></div></div>'
+    +'<div class="d-flex align-items-center gap-2">'
+    +'<span id="per-badge-pendientes" style="display:none;color:#dc2626;font-weight:700;font-size:.82rem;animation:per-parpadeo 1.2s infinite"></span>'
+    +'<button class="btn btn-sm fw-bold rounded-pill px-3" style="background:#1a237e;color:white" onclick="loadConsultaPermisos()">'
+    +'<i class="fas fa-list me-1"></i>Ver registros</button>'
+    +'</div></div>'
+    +'<style>@keyframes per-parpadeo{0%,100%{opacity:1}50%{opacity:.4}}</style>'
+
+    // ─── Empleado ─────────────────────────────────────────────────────
+    +'<div class="row g-3 mb-3">'
+    +'<div class="col-md-6"><label class="form-label small fw-bold">Empleado *</label>'
+    +_incCampoEmp('per-emp-txt','per-emp','per-emp-ac','_perCargarEmp')+'</div>'
+    +'<div class="col-md-3"><label class="form-label small fw-bold">Núm. Empleado</label>'
+    +'<input id="per-numEmp" class="form-control" readonly style="background:#f8fafc"></div>'
+    +'<div class="col-md-3"><label class="form-label small fw-bold">Fecha solicitud</label>'
+    +'<input id="per-fec-sol" type="date" class="form-control" value="'+_incHoyDate()+'" readonly style="background:#f8fafc"></div>'
+    +'<div class="col-md-6"><label class="form-label small fw-bold">Departamento</label>'
+    +'<input id="per-dept" class="form-control" placeholder="Se carga al seleccionar empleado"></div>'
+    +'<div class="col-md-6"><label class="form-label small fw-bold">Puesto</label>'
+    +'<input id="per-puesto" class="form-control" placeholder="Se carga al seleccionar empleado"></div>'
+    +'</div>'
+
+    // ─── Tipo permiso + Turno ─────────────────────────────────────────
+    +'<div class="row g-3 mb-3">'
+    +'<div class="col-md-5"><label class="form-label small fw-bold">Tipo de permiso *</label>'
+    +'<select id="per-tipo" class="form-select" onchange="per_onTipo()">'
+    +'<option value="">— Seleccionar —</option>'+optsTPerm+'</select></div>'
+    +'<div class="col-md-3"><label class="form-label small fw-bold">Turno</label>'
+    +_incBtnTurno('per-turno','per-hora-salida')+'</div>'
+    +'<div class="col-md-2"><label class="form-label small fw-bold">Hora salida</label>'
+    +'<input id="per-hora-salida" type="time" class="form-control"></div>'
+    +'<div class="col-md-2"><label class="form-label small fw-bold">Hora regreso</label>'
+    +'<input id="per-hora-regreso" type="time" class="form-control"></div>'
+    +'</div>'
+
+    // ─── Fechas + Días ────────────────────────────────────────────────
+    +'<div class="row g-3 mb-3">'
+    +'<div class="col-md-4"><label class="form-label small fw-bold">Fecha inicio *</label>'
+    +'<input id="per-fi" type="date" class="form-control" oninput="per_calcDias()"></div>'
+    +'<div class="col-md-4"><label class="form-label small fw-bold">Fecha fin *</label>'
+    +'<input id="per-ff" type="date" class="form-control" oninput="per_calcDias()"></div>'
+    +'<div class="col-md-4"><label class="form-label small fw-bold">Días solicitados</label>'
+    +'<input id="per-dias" type="number" min="1" class="form-control" style="background:#fffbeb" readonly></div>'
+    +'</div>'
+
+    // ─── Motivo + Autoriza ────────────────────────────────────────────
+    +'<div class="row g-3 mb-3">'
+    +'<div class="col-md-8"><label class="form-label small fw-bold">Motivo *</label>'
+    +'<textarea id="per-motivo" class="form-control" rows="2" placeholder="Describe brevemente el motivo..."></textarea></div>'
+    +'<div class="col-md-4"><label class="form-label small fw-bold">Autorizado por</label>'
+    +'<input id="per-auth" class="form-control" placeholder="Supervisor / Gerente"></div>'
+    +'</div>'
+
+    // ─── Pago de tiempo (oculto por defecto, se muestra si tipo=PAGO_TIEMPO) ──
+    +'<div id="per-bloque-pago" style="display:none">'
+    +'<div class="alert mb-3" style="background:#fff7ed;border:1px solid #fed7aa;border-radius:10px;padding:10px 14px">'
+    +'<p class="small fw-bold mb-2" style="color:#9a3412"><i class="fas fa-clock me-1"></i>Pago de tiempo — completar cuando se reponga</p>'
+    +'<div class="row g-2">'
+    +'<div class="col-md-4"><label class="form-label small fw-bold" style="color:#9a3412">Fecha que pagará</label>'
+    +'<input id="per-fec-pago" type="date" class="form-control form-control-sm"></div>'
+    +'<div class="col-md-4"><label class="form-label small fw-bold" style="color:#9a3412">Hora inicio</label>'
+    +'<input id="per-hora-ini-pago" type="time" class="form-control form-control-sm"></div>'
+    +'<div class="col-md-4"><label class="form-label small fw-bold" style="color:#9a3412">Hora fin</label>'
+    +'<input id="per-hora-fin-pago" type="time" class="form-control form-control-sm"></div>'
+    +'</div><p class="small text-muted mt-1 mb-0">Puedes dejarlo vacío y llenarlo después desde la Consulta.</p>'
+    +'</div></div>'
+
+    +'<div class="col-12 mb-3"><label class="form-label small fw-bold">Observaciones</label>'
+    +'<input id="per-obs" class="form-control" placeholder="Notas adicionales..."></div>'
+
+    +'<div class="d-flex gap-3 justify-content-end">'
+    +'<button class="btn btn-outline-secondary rounded-pill px-4" onclick="renderFormPermiso()">'
+    +'<i class="fas fa-undo me-2"></i>Limpiar</button>'
+    +'<button class="btn fw-bold rounded-pill px-5" style="background:#ea580c;color:white" onclick="per_guardar()">'
+    +'<i class="fas fa-save me-2"></i>Guardar Permiso</button>'
+    +'</div></div>';
+}
+
+function per_onTipo(){
+  var tipo=document.getElementById('per-tipo').value;
+  document.getElementById('per-bloque-pago').style.display=tipo==='PAGO_TIEMPO'?'block':'none';
+}
+
+function _perCargarEmp(e){
+  document.getElementById('per-numEmp').value =e.numEmpleado||'';
+  document.getElementById('per-dept').value   =e.area       ||'';
+  document.getElementById('per-puesto').value =e.puesto     ||'';
+}
+
+function per_calcDias(){
+  var fi=document.getElementById('per-fi').value;
+  var ff=document.getElementById('per-ff').value;
+  if(!fi||!ff){document.getElementById('per-dias').value='';return;}
+  var d1=new Date(fi+'T00:00:00'), d2=new Date(ff+'T00:00:00');
+  var diff=Math.round((d2-d1)/86400000)+1;
+  document.getElementById('per-dias').value=diff>0?diff:1;
+}
+
+function per_guardar(){
+  var empleado = document.getElementById('per-emp').value.trim();
+  var tipo     = document.getElementById('per-tipo').value.trim();
+  var fi       = document.getElementById('per-fi').value;
+  var ff       = document.getElementById('per-ff').value;
+  var motivo   = document.getElementById('per-motivo').value.trim();
+  if(!empleado||!tipo||!fi||!ff||!motivo){
+    Swal.fire('Campos incompletos','Empleado, Tipo de permiso, Fechas y Motivo son obligatorios.','warning');return;
+  }
+  // Convertir fechas a formato legible para guardar en hoja
+  var fmtDate=function(v){if(!v)return '';var p=v.split('-');return p.length===3?p[2]+'/'+p[1]+'/'+p[0]:v;};
+  var datos = {
+    empleado:       empleado,
+    numEmpleado:    document.getElementById('per-numEmp').value,
+    departamento:   document.getElementById('per-dept').value,
+    puesto:         document.getElementById('per-puesto').value,
+    tipoPermiso:    tipo,
+    horaSalida:     document.getElementById('per-hora-salida').value,
+    horaRegreso:    document.getElementById('per-hora-regreso').value,
+    fechaInicio:    fi, fechaFin: ff,
+    diasSolicitados:document.getElementById('per-dias').value||'1',
+    motivo:         motivo,
+    autorizadoPor:  document.getElementById('per-auth').value,
+    estatus:        'PENDIENTE',
+    fechaPagoTiempo:tipo==='PAGO_TIEMPO'?fmtDate(document.getElementById('per-fec-pago').value):'',
+    horaInicioPago: tipo==='PAGO_TIEMPO'?(document.getElementById('per-hora-ini-pago').value||''):'',
+    horaFinPago:    tipo==='PAGO_TIEMPO'?(document.getElementById('per-hora-fin-pago').value||''):'',
+    observaciones:  document.getElementById('per-obs').value
+  };
+  toggleSaving(true,'Guardando permiso...');
+  google.script.run
+    .withSuccessHandler(function(folio){
+      toggleSaving(false);
+      rhAlert('success','✅ Permiso registrado','Folio: '+folio,2200);
+    })
+    .withFailureHandler(function(e){toggleSaving(false);Swal.fire('Error',''+e,'error');})
+    .guardarPermisoEmpleado(datos);
+}
+

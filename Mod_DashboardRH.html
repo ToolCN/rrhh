@@ -1,0 +1,195 @@
+function loadDashboardRH(){
+  showLoader('Cargando dashboard...');
+  google.script.run
+    .withSuccessHandler(function(res){
+      hideLoader();
+      dash_mes  = res.mesDash;
+      dash_anio = res.anioDash;
+      dash_render(res);
+    })
+    .withFailureHandler(function(e){hideLoader();Swal.fire('Error',''+e,'error');})
+    .obtenerDashboardRH(dash_mes, dash_anio);
+}
+function dash_cambiarMes(delta){
+  dash_mes += delta;
+  if(dash_mes < 0){ dash_mes=11; dash_anio--; }
+  if(dash_mes > 11){ dash_mes=0; dash_anio++; }
+  showLoader('Cargando...');
+  google.script.run
+    .withSuccessHandler(function(res){ hideLoader(); dash_render(res); })
+    .withFailureHandler(function(e){ hideLoader(); })
+    .obtenerDashboardRH(dash_mes, dash_anio);
+}
+function dash_render(res){
+  res=res||{};
+  var totalActivos    = res.totalActivos    || 0;
+  var totalVacantes   = res.totalVacantes   || 0;
+  var porAreaActivo   = res.porAreaActivo   || {};
+  var porAreaVacante  = res.porAreaVacante  || {};
+  var bajasDelMes     = res.bajasDelMes     || 0;
+  var rotacion        = res.rotacion        || '0.0';
+  var vacMes          = res.vacMes          || {solicitado:0,autorizado:0,aplicado:0,cancelado:0};
+  var vacAntPend      = res.vacAnteriorPendiente || 0;
+  var vacPorArea      = res.vacPorArea      || {};
+  var sem             = res.semaforo        || {verde_fuerte:[],verde_claro:[],amarillo:[],naranja:[]};
+  var mesTxt          = MESES_NOMBRES[dash_mes]+' '+dash_anio;
+
+  // ── Construir áreas activos ──
+  var areasActivoHtml='';
+  Object.keys(porAreaActivo).sort().forEach(function(a){
+    areasActivoHtml+='<div style="display:flex;justify-content:space-between;padding:3px 0;border-bottom:1px solid #f1f5f9;font-size:.8rem">'
+      +'<span style="color:#475569">'+a+'</span><span style="font-weight:700;color:#1e293b">'+porAreaActivo[a]+'</span></div>';
+  });
+
+  // ── Construir áreas vacantes ──
+  var areasVacanteHtml='';
+  Object.keys(porAreaVacante).sort().forEach(function(a){
+    areasVacanteHtml+='<div style="display:flex;justify-content:space-between;padding:3px 0;border-bottom:1px solid #f1f5f9;font-size:.8rem">'
+      +'<span style="color:#475569">'+a+'</span><span style="font-weight:700;color:#f59e0b">'+porAreaVacante[a]+'</span></div>';
+  });
+  if(!areasVacanteHtml) areasVacanteHtml='<p style="font-size:.8rem;color:#94a3b8;margin:4px 0">Sin vacantes activas</p>';
+
+  // ── Semáforo HTML ──
+  function semRow(lista, color, titulo, icon){
+    if(!lista.length) return '';
+    var rows=lista.map(function(p){
+      return '<div style="display:flex;justify-content:space-between;align-items:center;padding:3px 6px;font-size:.78rem">'
+        +'<span style="color:#1e293b">'+p.nombre+'</span>'
+        +'<span style="color:#64748b;font-size:.72rem">'+p.area+(p.diasPend>0?' · '+p.diasPend+' días pendientes':'')+'</span>'
+        +'</div>';
+    }).join('');
+    return '<div style="margin-bottom:8px">'
+      +'<div style="display:flex;align-items:center;gap:6px;padding:4px 8px;background:'+color+';border-radius:6px 6px 0 0">'
+      +'<i class="'+icon+'" style="color:white;font-size:.8rem"></i>'
+      +'<span style="font-weight:700;color:white;font-size:.8rem">'+titulo+' ('+lista.length+')</span>'
+      +'</div>'
+      +'<div style="border:1px solid #e2e8f0;border-top:none;border-radius:0 0 6px 6px">'+rows+'</div>'
+      +'</div>';
+  }
+  var semHtml =  semRow(sem.verde_fuerte, '#16a34a', 'OK — Vacaciones al día', 'fas fa-check-circle')
+    + semRow(sem.verde_claro,  '#22c55e', 'Bien — Menos de 6 meses', 'fas fa-clock')
+    + semRow(sem.amarillo,     '#f59e0b', 'Atención — 6 a 10 meses', 'fas fa-exclamation-circle')
+    + semRow(sem.naranja,      '#ef4444', 'Alerta — Más de 10 meses', 'fas fa-exclamation-triangle');
+  if(!semHtml) semHtml='<p style="color:#94a3b8;font-size:.85rem;text-align:center;padding:12px">Sin datos de semáforo</p>';
+
+  // ── Vacaciones por área (tabla) ──
+  var vacAreaHtml='';
+  var areasVac=Object.keys(vacPorArea).sort();
+  if(areasVac.length){
+    vacAreaHtml='<div style="overflow-x:auto"><table class="table table-sm align-middle" style="font-size:.8rem;min-width:320px">'
+      +'<thead class="table-light"><tr><th>Área</th><th class="text-center" style="color:#3b82f6">Sol.</th>'
+      +'<th class="text-center" style="color:#22c55e">Aut.</th><th class="text-center" style="color:#8b5cf6">Apl.</th></tr></thead><tbody>';
+    areasVac.forEach(function(a){
+      var v=vacPorArea[a];
+      vacAreaHtml+='<tr><td>'+a+'</td>'
+        +'<td class="text-center fw-bold" style="color:#3b82f6">'+v.solicitado+'</td>'
+        +'<td class="text-center fw-bold" style="color:#22c55e">'+v.autorizado+'</td>'
+        +'<td class="text-center fw-bold" style="color:#8b5cf6">'+v.aplicado+'</td></tr>';
+    });
+    vacAreaHtml+='</tbody></table></div>';
+  } else {
+    vacAreaHtml='<p style="color:#94a3b8;font-size:.85rem;text-align:center;padding:8px">Sin solicitudes en este mes</p>';
+  }
+
+  // ── Pendiente de meses anteriores ──
+  var alertaAnt= vacAntPend>0
+    ? '<div style="background:#fef2f2;border:1.5px solid #fca5a5;border-radius:8px;padding:8px 14px;margin-top:8px;display:flex;align-items:center;gap:8px">'
+      +'<i class="fas fa-exclamation-circle" style="color:#ef4444"></i>'
+      +'<span style="font-size:.82rem;color:#b91c1c;font-weight:600">'+vacAntPend+' días de vacaciones de meses anteriores aún sin aplicar</span>'
+      +'</div>'
+    : '';
+
+  document.getElementById('content-area').innerHTML=
+    // ── NAVEGADOR DE MES ──
+    '<div style="display:flex;align-items:center;justify-content:flex-end;gap:8px;margin-bottom:12px">'
+    +'<button onclick="dash_cambiarMes(-1)" style="background:#f1f5f9;border:none;border-radius:50%;width:32px;height:32px;cursor:pointer;font-size:1rem">&#8249;</button>'
+    +'<span style="font-weight:700;color:#0f172a;min-width:140px;text-align:center">'+mesTxt+'</span>'
+    +'<button onclick="dash_cambiarMes(1)" style="background:#f1f5f9;border:none;border-radius:50%;width:32px;height:32px;cursor:pointer;font-size:1rem">&#8250;</button>'
+    +'</div>'
+
+    // ── FILA 1: PLANTILLA + VACANTES ──
+    +'<div class="row g-3 mb-3">'
+
+    // Plantilla activa
+    +'<div class="col-12 col-md-6">'
+    +'<div class="card-pro" style="padding:16px">'
+    +'<div style="display:flex;align-items:center;gap-8px;margin-bottom:10px">'
+    +'<i class="fas fa-users" style="color:var(--rh-color);margin-right:8px"></i>'
+    +'<span style="font-weight:800;font-size:1rem;color:#0f172a">Plantilla Activa</span>'
+    +'<span style="margin-left:auto;font-size:2rem;font-weight:900;color:var(--rh-color)">'+totalActivos+'</span>'
+    +'</div>'
+    +'<div style="max-height:180px;overflow-y:auto">'+areasActivoHtml+'</div>'
+    +'</div></div>'
+
+    // Vacantes
+    +'<div class="col-12 col-md-6">'
+    +'<div class="card-pro" style="padding:16px">'
+    +'<div style="display:flex;align-items:center;margin-bottom:10px">'
+    +'<i class="fas fa-briefcase" style="color:#f59e0b;margin-right:8px"></i>'
+    +'<span style="font-weight:800;font-size:1rem;color:#0f172a">Vacantes</span>'
+    +'<span style="margin-left:auto;font-size:2rem;font-weight:900;color:#f59e0b">'+totalVacantes+'</span>'
+    +'</div>'
+    +'<div style="max-height:180px;overflow-y:auto">'+areasVacanteHtml+'</div>'
+    +'</div></div>'
+
+    +'</div>'
+
+    // ── FILA 2: BAJAS DEL MES + ROTACIÓN ──
+    +'<div class="row g-3 mb-3">'
+    +'<div class="col-6 col-md-3"><div class="stat-card" style="border-left-color:#ef4444">'
+    +'<div class="stat-label"><i class="fas fa-user-minus me-1"></i>Bajas del mes</div>'
+    +'<div class="stat-val" style="color:#ef4444">'+bajasDelMes+'</div>'
+    +'</div></div>'
+    +'<div class="col-6 col-md-3"><div class="stat-card" style="border-left-color:#f59e0b">'
+    +'<div class="stat-label"><i class="fas fa-chart-line me-1"></i>Rotación del mes</div>'
+    +'<div class="stat-val" style="color:#f59e0b">'+rotacion+'%</div>'
+    +'</div></div>'
+    +'<div class="col-6 col-md-3"><div class="stat-card" style="border-left-color:#3b82f6">'
+    +'<div class="stat-label"><i class="fas fa-umbrella-beach me-1"></i>Días solicitados</div>'
+    +'<div class="stat-val" style="color:#3b82f6">'+vacMes.solicitado+'</div>'
+    +'</div></div>'
+    +'<div class="col-6 col-md-3"><div class="stat-card" style="border-left-color:#22c55e">'
+    +'<div class="stat-label"><i class="fas fa-check me-1"></i>Días autorizados</div>'
+    +'<div class="stat-val" style="color:#22c55e">'+vacMes.autorizado+'</div>'
+    +'</div></div>'
+    +'</div>'
+
+    // ── FILA 3: RESUMEN VACACIONES DEL MES ──
+    +'<div class="row g-3 mb-3">'
+    +'<div class="col-12 col-md-6">'
+    +'<div class="card-pro" style="padding:16px">'
+    +'<div style="font-weight:800;color:#0f172a;margin-bottom:10px"><i class="fas fa-calendar-check me-2" style="color:var(--rh-color)"></i>Vacaciones del mes</div>'
+    +'<div class="row g-2 text-center">'
+    +'<div class="col-6"><div style="background:#eff6ff;border-radius:8px;padding:8px"><div style="font-size:1.4rem;font-weight:900;color:#3b82f6">'+vacMes.solicitado+'</div><div style="font-size:.72rem;color:#64748b">Solicitados</div></div></div>'
+    +'<div class="col-6"><div style="background:#f0fdf4;border-radius:8px;padding:8px"><div style="font-size:1.4rem;font-weight:900;color:#22c55e">'+vacMes.autorizado+'</div><div style="font-size:.72rem;color:#64748b">Autorizados</div></div></div>'
+    +'<div class="col-6"><div style="background:#f5f3ff;border-radius:8px;padding:8px"><div style="font-size:1.4rem;font-weight:900;color:#8b5cf6">'+vacMes.aplicado+'</div><div style="font-size:.72rem;color:#64748b">Aplicados</div></div></div>'
+    +'<div class="col-6"><div style="background:#fef2f2;border-radius:8px;padding:8px"><div style="font-size:1.4rem;font-weight:900;color:#ef4444">'+vacMes.cancelado+'</div><div style="font-size:.72rem;color:#64748b">Cancelados</div></div></div>'
+    +'</div>'
+    +alertaAnt
+    +'</div></div>'
+
+    // Vacaciones por área
+    +'<div class="col-12 col-md-6">'
+    +'<div class="card-pro" style="padding:16px">'
+    +'<div style="font-weight:800;color:#0f172a;margin-bottom:10px"><i class="fas fa-chart-bar me-2" style="color:var(--rh-color)"></i>Vacaciones por área</div>'
+    +vacAreaHtml
+    +'</div></div>'
+    +'</div>'
+
+    // ── FILA 4: SEMÁFORO DE VACACIONES ──
+    +'<div class="card-pro" style="padding:16px">'
+    +'<div style="font-weight:800;color:#0f172a;margin-bottom:12px"><i class="fas fa-traffic-light me-2" style="color:var(--rh-color)"></i>Semáforo de Vacaciones</div>'
+    +'<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:8px;margin-bottom:8px">'
+    +'<div style="background:#f0fdf4;border-radius:8px;padding:6px 10px;font-size:.75rem"><span style="background:#16a34a;color:white;border-radius:4px;padding:2px 6px;font-weight:700">Verde Fuerte</span> Vacaciones al día ('+sem.verde_fuerte.length+')</div>'
+    +'<div style="background:#f0fdf4;border-radius:8px;padding:6px 10px;font-size:.75rem"><span style="background:#22c55e;color:white;border-radius:4px;padding:2px 6px;font-weight:700">Verde Claro</span> Hasta 6 meses del aniversario ('+sem.verde_claro.length+')</div>'
+    +'<div style="background:#fefce8;border-radius:8px;padding:6px 10px;font-size:.75rem"><span style="background:#f59e0b;color:white;border-radius:4px;padding:2px 6px;font-weight:700">Amarillo</span> 6 a 10 meses del aniversario ('+sem.amarillo.length+')</div>'
+    +'<div style="background:#fef2f2;border-radius:8px;padding:6px 10px;font-size:.75rem"><span style="background:#ef4444;color:white;border-radius:4px;padding:2px 6px;font-weight:700">Naranja/Rojo</span> +10 meses — urgente ('+sem.naranja.length+')</div>'
+    +'</div>'
+    +semHtml
+    +'</div>';
+}
+
+// ══════════════════════════════════════════════════════════
+//  MÓDULO: PLANTILLA ACTIVA
+// ══════════════════════════════════════════════════════════
+var rh_datos=[], rh_originales=[], rh_catalogoAreas={}, rh_catalogoProcesos=[], rh_idsModificados=new Set(), rh_camposModificados={}, rh_ordenModificados=[], rh_idEditando=null;

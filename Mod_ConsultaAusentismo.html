@@ -1,0 +1,929 @@
+function loadConsultaAusentismo(){
+  var m=inc_mes, a=inc_anio;
+  showLoader('Cargando ausentismo de '+MESES_NOMBRES[m]+' '+a+'...');
+  google.script.run
+    .withSuccessHandler(function(lista){hideLoader();renderTablaAusentismo(lista||[]);})
+    .withFailureHandler(function(e){hideLoader();Swal.fire('Error',''+e,'error');})
+    .obtenerAusentismo({mes:m, anio:a});
+}
+
+function renderTablaAusentismo(lista){
+  var total=lista.length;
+  var just=lista.filter(function(r){return (r.justificado||'').toUpperCase()==='SI';}).length;
+  var injust=total-just;
+
+  document.getElementById('content-area').innerHTML=
+    '<div class="card-pro mb-3">'
+    +'<div class="d-flex justify-content-between align-items-center mb-4">'
+    +'<div class="d-flex align-items-center gap-3">'
+    +'<div style="width:48px;height:48px;border-radius:12px;background:#ea580c20;display:flex;align-items:center;justify-content:center">'
+    +'<i class="fas fa-user-clock" style="color:#ea580c;font-size:1.4rem"></i></div>'
+    +'<div><h5 class="fw-bold m-0">Registros de Ausentismo</h5>'
+    +'<p class="text-muted small m-0">Historial de faltas</p></div></div>'
+    +'<div class="d-flex align-items-center gap-2">'
+    +_incNavMes('AUSENTISMO')
+    +'<button class="btn fw-bold rounded-pill px-4 me-2" style="background:#16a34a;color:white" onclick="aus_exportarExcel()">'
+    +'<i class="fas fa-file-excel me-2"></i>Exportar Excel</button>'
+    +'<button class="btn fw-bold rounded-pill px-4" style="background:#ea580c;color:white" onclick="loadAusentismo()">'
+    +'<i class="fas fa-plus me-2"></i>Nuevo Registro</button>'
+    +'</div></div>'
+    +'<div class="row g-3 mb-4">'
+    +_incStat('Total Faltas',total,'#ea580c','fa-user-slash')
+    +_incStat('Justificadas',just,'#16a34a','fa-check-circle')
+    +_incStat('Injustificadas',injust,'#dc2626','fa-times-circle')
+    +'</div>'
+    +'<div class="row g-2 mb-3">'
+    +'<div class="col-md-5"><input id="aus-fi-emp" class="form-control form-control-sm" placeholder="🔍 Buscar empleado..." oninput="_ausFiltrar()"></div>'
+    +'<div class="col-md-3"><select id="aus-fi-just" class="form-select form-select-sm" onchange="_ausFiltrar()">'
+    +'<option value="">Todos</option><option value="SI">Justificadas</option><option value="NO">Injustificadas</option></select></div>'
+    +'</div>'
+    +'<div class="table-responsive"><table class="table table-hover align-middle">'
+    +'<thead class="table-light"><tr><th>Folio</th><th>Fecha</th><th>Empleado</th><th>Área</th><th>Turno</th><th>Motivo</th><th>Justificado</th><th></th></tr></thead>'
+    +'<tbody id="tbody-aus">'
+    +(lista.length===0?'<tr><td colspan="8" class="text-center text-muted py-5">Sin registros</td></tr>'
+      :(_rhSet('aus',lista),lista.map(function(r,i){ return _rowAus(r,i); }).join('')))
+    +'</tbody></table></div></div>';
+  window._ausCache=lista;
+  setTimeout(_ausBindEvents,0);
+}
+
+function _rowAus(r, idx){
+  var just=(r.justificado||'NO').toUpperCase()==='SI';
+  var badge=just
+    ?'<span class="badge" style="background:#dcfce7;color:#16a34a">Sí</span>'
+    :'<span class="badge" style="background:#fee2e2;color:#dc2626">No</span>';
+  return '<tr data-emp="'+(r.empleado||'').toUpperCase()+'" data-just="'+(r.justificado||'NO').toUpperCase()+'">'
+    +'<td><span class="fw-bold" style="color:#ea580c;font-size:.8rem">'+r.folio+'</span></td>'
+    +'<td class="small">'+_incFmt(r.fecha)+'</td>'
+    +'<td class="fw-bold small">'+r.empleado+'</td>'
+    +'<td class="small text-muted">'+(r.departamento||'—')+'</td>'
+    +'<td class="small">'+(r.turno||'—')+'</td>'
+    +'<td class="small">'+r.motivo+'</td>'
+    +'<td>'+badge+'</td>'
+    +'<td><div class="d-flex gap-1">'
+    +'<button class="btn btn-sm btn-outline-warning rounded-pill" style="font-size:.7rem" data-accion="aus-editar" data-idx="'+idx+'"><i class="fas fa-edit me-1"></i>Editar</button>'
+    +'<button class="btn btn-sm btn-outline-danger rounded-pill" style="font-size:.7rem" data-accion="aus-eliminar" data-folio="'+r.folio+'"><i class="fas fa-trash me-1"></i>Eliminar</button>'
+    +'</div></td></tr>';
+}
+
+function _ausFiltrar(){
+  var emp =(document.getElementById('aus-fi-emp').value||'').toUpperCase().trim();
+  var just=(document.getElementById('aus-fi-just').value||'').toUpperCase().trim();
+  document.querySelectorAll('#tbody-aus tr').forEach(function(tr){
+    var v=(!emp||tr.dataset.emp.includes(emp))&&(!just||tr.dataset.just===just);
+    tr.style.display=v?'':'none';
+  });
+}
+
+function _ausBindEvents(){
+  var area=document.getElementById('content-area');
+  if(!area) return;
+  if(area._ausHandler) area.removeEventListener('click',area._ausHandler);
+  area._ausHandler=function(ev){
+    var btn=ev.target.closest('[data-accion]');
+    if(!btn) return;
+    var ac=btn.getAttribute('data-accion');
+    var folio=btn.getAttribute('data-folio')||'';
+    var idx=parseInt(btn.getAttribute('data-idx')||'0',10);
+    var r=_rhGet('aus',idx);
+    if(ac==='aus-editar') _ausModalEditar(r);
+    else if(ac==='aus-eliminar') incEliminar(folio,'AUSENTISMO',loadConsultaAusentismo);
+  };
+  area.addEventListener('click',area._ausHandler);
+}
+// ══════════════════════════════════════════════════════════════
+//  AUSENTISMO — Exportar a Excel
+// ══════════════════════════════════════════════════════════════
+function aus_exportarExcel(){
+  showLoader('Generando reporte Excel...');
+  // Obtener TODOS los registros del año actual para hoja resumen
+  var anio = inc_anio;
+  var mes  = inc_mes;
+  google.script.run
+    .withSuccessHandler(function(datosAnio){
+      google.script.run
+        .withSuccessHandler(function(datosMes){
+          // también cargar 3 meses anteriores
+          var meses3 = [];
+          var promesas = [];
+          var mesActual = mes;
+          var m1 = mesActual - 1 < 0 ? 11 : mesActual - 1;
+          var a1 = mesActual - 1 < 0 ? anio - 1 : anio;
+          var m2 = m1 - 1 < 0 ? 11 : m1 - 1;
+          var a2 = m1 - 1 < 0 ? a1 - 1 : a1;
+          var m3 = m2 - 1 < 0 ? 11 : m2 - 1;
+          var a3 = m2 - 1 < 0 ? a2 - 1 : a2;
+          // Cargar 3 meses anteriores secuencialmente
+          google.script.run
+            .withSuccessHandler(function(d1){
+              meses3.push({mes:m1,anio:a1,datos:d1||[]});
+              google.script.run
+                .withSuccessHandler(function(d2){
+                  meses3.push({mes:m2,anio:a2,datos:d2||[]});
+                  google.script.run
+                    .withSuccessHandler(function(d3){
+                      meses3.push({mes:m3,anio:a3,datos:d3||[]});
+                      hideLoader();
+                      _aus_generarExcelJS(datosAnio||[], datosMes||[], meses3, anio, mes);
+                    })
+                    .withFailureHandler(function(){hideLoader();rhAlert('error','Error','No se pudieron cargar datos anteriores');})
+                    .obtenerAusentismo({mes:m3, anio:a3});
+                })
+                .withFailureHandler(function(){hideLoader();rhAlert('error','Error','No se pudieron cargar datos anteriores');})
+                .obtenerAusentismo({mes:m2, anio:a2});
+            })
+            .withFailureHandler(function(){hideLoader();rhAlert('error','Error','No se pudieron cargar datos anteriores');})
+            .obtenerAusentismo({mes:m1, anio:a1});
+        })
+        .withFailureHandler(function(e){hideLoader();rhAlert('error','Error',''+e);})
+        .obtenerAusentismo({mes:mes, anio:anio});
+    })
+    .withFailureHandler(function(e){hideLoader();rhAlert('error','Error',''+e);})
+    .obtenerAusentismo({anio:anio});
+}
+
+var MESES_CORTOS = ['Ene','Feb','Mar','Abr','May','Jun','Jul','Ago','Sep','Oct','Nov','Dic'];
+
+function _aus_semanaDelMes(fechaStr){
+  var p = (fechaStr||'').split('/');
+  if(p.length < 3) return 1;
+  var dia = parseInt(p[0], 10);
+  return Math.ceil(dia / 7);
+}
+function _aus_semanaAnio(fechaStr){
+  // Devuelve el número de semana real del año (ISO-like, lunes=inicio)
+  var d = _aus_parseDate(fechaStr);
+  if(!d) return 0;
+  var inicio = new Date(d.getFullYear(), 0, 1);
+  var dias   = Math.floor((d - inicio) / 86400000);
+  return Math.ceil((dias + inicio.getDay() + 1) / 7);
+}
+
+function _aus_parseDate(fechaStr){
+  var p = (fechaStr||'').split('/');
+  if(p.length === 3) return new Date(parseInt(p[2]), parseInt(p[1])-1, parseInt(p[0]));
+  return null;
+}
+
+function _aus_generarExcelJS(datosAnio, datosMes, meses3, anio, mes){
+  var wb = new ExcelJS.Workbook();
+  wb.creator = 'TOOL CN RH';
+  wb.created = new Date();
+
+  // ─── ESTILOS comunes ───
+  var colNaranja   = 'FFEA580C';
+  var colNaranjaL  = 'FFFFEEDD';
+  var colAzulOsc   = 'FF1A237E';
+  var colVerde     = 'FF16A34A';
+  var colVerdeL    = 'FFD1FAE5';
+  var colRojo      = 'FFDC2626';
+  var colRojoL     = 'FFFEE2E2';
+  var colGrisH     = 'FFF1F5F9';
+  var colBlanco    = 'FFFFFFFF';
+  var colTexto     = 'FF0F172A';
+  var colGris      = 'FF64748B';
+
+  function hdrStyle(bgHex, fgHex){
+    return {
+      font:      {bold:true, color:{argb: fgHex||'FFFFFFFF'}, size:10},
+      fill:      {type:'pattern', pattern:'solid', fgColor:{argb: bgHex}},
+      alignment: {horizontal:'center', vertical:'middle', wrapText:true},
+      border:    {
+        top:    {style:'thin', color:{argb:'FFD1D5DB'}},
+        left:   {style:'thin', color:{argb:'FFD1D5DB'}},
+        bottom: {style:'thin', color:{argb:'FFD1D5DB'}},
+        right:  {style:'thin', color:{argb:'FFD1D5DB'}}
+      }
+    };
+  }
+
+  function cellStyle(bgHex, fgHex, bold){
+    return {
+      font:      {bold:!!bold, color:{argb: fgHex||colTexto}, size:10},
+      fill:      {type:'pattern', pattern:'solid', fgColor:{argb: bgHex||colBlanco}},
+      alignment: {horizontal:'center', vertical:'middle'},
+      border:    {
+        top:    {style:'thin', color:{argb:'FFE2E8F0'}},
+        left:   {style:'thin', color:{argb:'FFE2E8F0'}},
+        bottom: {style:'thin', color:{argb:'FFE2E8F0'}},
+        right:  {style:'thin', color:{argb:'FFE2E8F0'}}
+      }
+    };
+  }
+
+  function applyStyle(cell, style){
+    if(style.font)      cell.font      = style.font;
+    if(style.fill)      cell.fill      = style.fill;
+    if(style.alignment) cell.alignment = style.alignment;
+    if(style.border)    cell.border    = style.border;
+    if(style.numFmt)    cell.numFmt    = style.numFmt;
+  }
+
+  // ══════════════════════════════════════════════════════════════════
+  //  HOJA 1 — Resumen Anual
+  // ══════════════════════════════════════════════════════════════════
+  var ws1 = wb.addWorksheet('Resumen Anual', {
+    pageSetup:{paperSize:1, orientation:'landscape', fitToPage:true, fitToWidth:1, fitToHeight:0,
+               margins:{left:0.25, right:0.25, top:0.3, bottom:0.3, header:0.1, footer:0.1}}
+  });
+  ws1.views = [{showGridLines:false}];
+
+  // Título principal
+  ws1.mergeCells('A1:O1');
+  var titleCell = ws1.getCell('A1');
+  titleCell.value = '📊  REPORTE ANUAL DE AUSENTISMO — '+anio;
+  applyStyle(titleCell, {
+    font:{bold:true, size:16, color:{argb:'FFFFFFFF'}},
+    fill:{type:'pattern', pattern:'solid', fgColor:{argb:colAzulOsc}},
+    alignment:{horizontal:'center', vertical:'middle'}
+  });
+  ws1.getRow(1).height = 40;
+
+  ws1.mergeCells('A2:O2');
+  var subCell = ws1.getCell('A2');
+  subCell.value = 'Generado el '+new Date().toLocaleDateString('es-MX')+' | TOOL CN Recursos Humanos';
+  applyStyle(subCell, {
+    font:{italic:true, size:9, color:{argb:colGris}},
+    fill:{type:'pattern', pattern:'solid', fgColor:{argb:colGrisH}},
+    alignment:{horizontal:'center', vertical:'middle'}
+  });
+  ws1.getRow(2).height = 18;
+
+  // Espacio
+  ws1.getRow(3).height = 8;
+
+  // ── Tabla resumen por mes ──
+  // Calcular datos por mes
+  var porMes = {};
+  for(var m=0; m<12; m++) porMes[m] = {total:0, just:0, injust:0, empleados:{}};
+
+  (datosAnio||[]).forEach(function(r){
+    var p = (r.fecha||'').split('/');
+    if(p.length < 3) return;
+    var mi = parseInt(p[1],10)-1;
+    if(mi < 0 || mi > 11) return;
+    porMes[mi].total++;
+    if((r.justificado||'').toUpperCase()==='SI') porMes[mi].just++;
+    else porMes[mi].injust++;
+    porMes[mi].empleados[r.empleado] = (porMes[mi].empleados[r.empleado]||0)+1;
+  });
+
+  // Cabecera tabla mensual
+  ws1.getRow(4).height = 22;
+  var hdrs1 = ['Mes','Total Faltas','Justificadas','Injustificadas','Empleados Únicos','% Injustificadas'];
+  var cols1 = ['A','B','C','D','E','F'];
+  var anchos1 = [18, 14, 14, 16, 16, 18];
+  cols1.forEach(function(c,i){ ws1.getColumn(c).width = anchos1[i]; });
+  hdrs1.forEach(function(h,i){
+    var cell = ws1.getCell(cols1[i]+'4');
+    cell.value = h;
+    applyStyle(cell, hdrStyle(colNaranja));
+  });
+
+  // Filas por mes
+  var totalAnual = {total:0, just:0, injust:0};
+  for(var m=0; m<12; m++){
+    var row = ws1.getRow(5+m);
+    row.height = 18;
+    var d = porMes[m];
+    var unic = Object.keys(d.empleados).length;
+    var pct  = d.total > 0 ? Math.round(d.injust/d.total*100) : 0;
+    totalAnual.total  += d.total;
+    totalAnual.just   += d.just;
+    totalAnual.injust += d.injust;
+    var bgRow = (m===mes) ? colNaranjaL : (m%2===0 ? colBlanco : colGrisH);
+    var vals  = [MESES_CORTOS[m]+' '+anio, d.total, d.just, d.injust, unic, pct+'%'];
+    vals.forEach(function(v, ci){
+      var cell = ws1.getCell(cols1[ci]+(5+m));
+      cell.value = v;
+      var st = cellStyle(bgRow, colTexto, m===mes);
+      if(ci===1 && d.total > 0) st.font.color = {argb: colNaranja};
+      if(ci===3 && d.injust > 0) st.font.color = {argb: colRojo};
+      if(ci===2 && d.just  > 0) st.font.color = {argb: colVerde};
+      applyStyle(cell, st);
+    });
+  }
+
+  // Fila total
+  var rowTot = ws1.getRow(17);
+  rowTot.height = 22;
+  var pctAnual = totalAnual.total > 0 ? Math.round(totalAnual.injust/totalAnual.total*100) : 0;
+  var totVals  = ['TOTAL ANUAL', totalAnual.total, totalAnual.just, totalAnual.injust, '', pctAnual+'%'];
+  totVals.forEach(function(v,ci){
+    var cell = ws1.getCell(cols1[ci]+'17');
+    cell.value = v;
+    applyStyle(cell, hdrStyle(colAzulOsc));
+  });
+
+  // ── Tabla por semana del mes actual ──
+  ws1.getRow(19).height = 22;
+  ws1.mergeCells('A19:G19');
+  var semTit = ws1.getCell('A19');
+  semTit.value = '📅  DETALLE POR SEMANAS — '+MESES_NOMBRES[mes]+' '+anio;
+  applyStyle(semTit, {
+    font:{bold:true, size:12, color:{argb:'FFFFFFFF'}},
+    fill:{type:'pattern', pattern:'solid', fgColor:{argb:colNaranja}},
+    alignment:{horizontal:'center', vertical:'middle'}
+  });
+
+  // Columna A=Mes, B=Semana, C=Total, D=Justificadas, E=Injustificadas, F=Área más faltas
+  var hdrs2 = ['Mes','Semana','Total Faltas','Justificadas','Injustificadas','Área con más faltas'];
+  var cols2 = ['A','B','C','D','E','F'];
+  hdrs2.forEach(function(h,i){
+    var cell = ws1.getCell(cols2[i]+'20');
+    cell.value = h;
+    applyStyle(cell, hdrStyle(colNaranja));
+  });
+  ws1.getRow(20).height = 20;
+  ws1.getColumn('A').width = 12;
+  ws1.getColumn('F').width = 28;
+
+  var porSem = {};
+  var semOrden = [];
+  (datosMes||[]).forEach(function(r){
+    var san = _aus_semanaAnio(r.fecha||'');
+    if(!porSem[san]) { porSem[san] = {t:0,j:0,i:0,emp:{},semAnio:san}; semOrden.push(san); }
+    porSem[san].t++;
+    if((r.justificado||'').toUpperCase()==='SI') porSem[san].j++;
+    else porSem[san].i++;
+    porSem[san].emp[r.empleado] = (porSem[san].emp[r.empleado]||0)+1;
+  });
+  semOrden.sort(function(a,b){return a-b;});
+  semOrden = semOrden.filter(function(v,i,a){return a.indexOf(v)===i;});
+
+  var semTotT=0, semTotJ=0, semTotI=0;
+  var semRowStart = 21;
+  var semCurRow = semRowStart;
+
+  // Agrupar semanas por mes para combinar col A
+  var mesSems = {};
+  semOrden.forEach(function(s){
+    var ds = porSem[s];
+    if(!ds || ds.t===0) return;
+    var mesS = mes;
+    (datosMes||[]).forEach(function(r){
+      if(_aus_semanaAnio(r.fecha||'')===s){
+        var p=(r.fecha||'').split('/');
+        if(p.length===3) mesS=parseInt(p[1],10)-1;
+      }
+    });
+    if(!mesSems[mesS]) mesSems[mesS]=[];
+    mesSems[mesS].push(s);
+  });
+
+  var mesKeys = Object.keys(mesSems).map(Number).sort(function(a,b){return a-b;});
+  mesKeys.forEach(function(mesK){
+    var semsDelMes = mesSems[mesK];
+    var numSems = semsDelMes.length;
+    if(numSems > 1){
+      ws1.mergeCells('A'+semCurRow+':A'+(semCurRow+numSems-1));
+    }
+    var cMes = ws1.getCell('A'+semCurRow);
+    cMes.value = MESES_CORTOS[mesK]+' '+anio;
+    var stMes = cellStyle(colNaranjaL, colNaranja, true);
+    stMes.alignment = {horizontal:'center', vertical:'middle'};
+    applyStyle(cMes, stMes);
+
+    semsDelMes.forEach(function(s, si){
+      var ds = porSem[s];
+      var bgS = si%2===0 ? colBlanco : colGrisH;
+      semTotT += ds.t; semTotJ += ds.j; semTotI += ds.i;
+      var areaSem = {};
+      (datosMes||[]).forEach(function(r){
+        if(_aus_semanaAnio(r.fecha||'')===s){
+          var ar = r.departamento||'Sin área';
+          areaSem[ar] = (areaSem[ar]||0)+1;
+        }
+      });
+      var topArea = '—'; var topCnt = 0;
+      Object.keys(areaSem).forEach(function(ar){
+        if(areaSem[ar]>topCnt){ topCnt=areaSem[ar]; topArea=ar+' ('+areaSem[ar]+')'; }
+      });
+      ws1.getRow(semCurRow).height = 18;
+      var svs = ['', 'Sem. '+ds.semAnio, ds.t, ds.j, ds.i, topArea];
+      svs.forEach(function(v,ci){
+        if(ci===0) return;
+        var cell = ws1.getCell(cols2[ci]+semCurRow);
+        cell.value = v;
+        var st = cellStyle(bgS);
+        if(ci===2 && ds.t>0) st.font.color={argb:colNaranja};
+        if(ci===3 && ds.j>0) st.font.color={argb:colVerde};
+        if(ci===4 && ds.i>0) st.font.color={argb:colRojo};
+        if(ci===5){ st.alignment={horizontal:'left',vertical:'middle',indent:1}; }
+        applyStyle(cell, st);
+      });
+      semCurRow++;
+    });
+  });
+
+  var totRowN = semCurRow;
+  ws1.getRow(totRowN).height = 20;
+  ws1.mergeCells('A'+totRowN+':B'+totRowN);
+  var cellTotLabel = ws1.getCell('A'+totRowN);
+  cellTotLabel.value = 'TOTAL';
+  applyStyle(cellTotLabel, hdrStyle(colAzulOsc));
+  ['', '', semTotT, semTotJ, semTotI, ''].forEach(function(v,ci){
+    if(ci<2) return;
+    var cell = ws1.getCell(cols2[ci]+totRowN);
+    cell.value = v;
+    applyStyle(cell, hdrStyle(colAzulOsc));
+  });
+
+  // ── Gráfica de barras (datos como tabla visual con barras unicode-style) ──
+  // Columnas H-O para gráfica visual de barras
+  ws1.getColumn('H').width = 6;
+  ws1.getColumn('I').width = 14;
+  ws1.getColumn('J').width = 8;
+  ws1.getColumn('K').width = 10;  // INJUST. más ancha para no cortarse
+  ws1.getColumn('L').width = 6;
+  ws1.getColumn('M').width = 6;
+  ws1.getColumn('N').width = 6;
+  ws1.getColumn('O').width = 6;
+
+  ws1.mergeCells('H4:O4');
+  var grafTit = ws1.getCell('H4');
+  grafTit.value = '📊  GRÁFICA DE AUSENTISMO POR MES — '+anio;
+  applyStyle(grafTit, {
+    font:{bold:true, size:11, color:{argb:'FFFFFFFF'}},
+    fill:{type:'pattern', pattern:'solid', fgColor:{argb:colAzulOsc}},
+    alignment:{horizontal:'center', vertical:'middle'}
+  });
+
+  // Encabezados gráfica
+  var maxVal = Math.max.apply(null, Object.keys(porMes).map(function(k){ return porMes[k].total; }).concat([1]));
+  var grafCols = ['H','I','J','K','L','M','N','O'];
+  // Mini-gráfica con bloques de celda coloreados proporcional
+  for(var m=0; m<12; m++){
+    var d2 = porMes[m];
+    var rowG = ws1.getRow(5+m);
+    // Columna H = mes etiqueta
+    var cH = ws1.getCell('H'+(5+m));
+    cH.value = MESES_CORTOS[m];
+    applyStyle(cH, cellStyle(m===mes?colNaranjaL:colGrisH, colTexto, m===mes));
+    // Columnas I en adelante = barra proporcional (máx 6 bloques)
+    var bloques = d2.total > 0 ? Math.max(1, Math.round(d2.total/maxVal*6)) : 0;
+    var barStr  = '';
+    for(var b=0; b<6; b++) barStr += (b < bloques) ? '█' : '░';
+    var cBar = ws1.getCell('I'+(5+m));
+    cBar.value = barStr + '  '+d2.total;
+    applyStyle(cBar, {
+      font:{bold:d2.total>0, color:{argb: d2.total>0?colNaranja:'FFCCCCCC'}, size:11},
+      fill:{type:'pattern', pattern:'solid', fgColor:{argb: m===mes?colNaranjaL:colBlanco}},
+      alignment:{horizontal:'left', vertical:'middle'}
+    });
+    // Justificadas
+    var cJ = ws1.getCell('J'+(5+m));
+    cJ.value = d2.just;
+    applyStyle(cJ, cellStyle(d2.just>0?colVerdeL:colBlanco, colVerde, d2.just>0));
+    // Injustificadas
+    var cI = ws1.getCell('K'+(5+m));
+    cI.value = d2.injust;
+    applyStyle(cI, cellStyle(d2.injust>0?colRojoL:colBlanco, colRojo, d2.injust>0));
+  }
+  // Etiqueta de leyenda gráfica
+  var legRow = ws1.getRow(17);
+  var cLegH = ws1.getCell('H17');
+  cLegH.value = 'MES';
+  applyStyle(cLegH, hdrStyle(colAzulOsc));
+  var cLegB = ws1.getCell('I17');
+  cLegB.value = 'FALTAS';
+  applyStyle(cLegB, hdrStyle(colAzulOsc));
+  var cLegJ = ws1.getCell('J17');
+  cLegJ.value = 'JUST.';
+  applyStyle(cLegJ, hdrStyle(colVerde));
+  var cLegI = ws1.getCell('K17');
+  cLegI.value = 'INJUST.';
+  applyStyle(cLegI, hdrStyle(colRojo));
+
+
+  // ══════════════════════════════════════════════════════════════════
+  //  HOJA 2 — Detalle del mes
+  // ══════════════════════════════════════════════════════════════════
+  var ws2 = wb.addWorksheet('Detalle '+MESES_CORTOS[mes]+' '+anio, {
+    pageSetup:{paperSize:1, orientation:'landscape', fitToPage:true, fitToWidth:1, fitToHeight:0,
+               margins:{left:0.25, right:0.25, top:0.3, bottom:0.3, header:0.1, footer:0.1}}
+  });
+  ws2.views = [{showGridLines:false}];
+
+  // Título
+  ws2.mergeCells('A1:K1');
+  var t2 = ws2.getCell('A1');
+  t2.value = '📋  DETALLE DE AUSENTISMO — '+MESES_NOMBRES[mes].toUpperCase()+' '+anio;
+  applyStyle(t2, {
+    font:{bold:true, size:15, color:{argb:'FFFFFFFF'}},
+    fill:{type:'pattern', pattern:'solid', fgColor:{argb:colNaranja}},
+    alignment:{horizontal:'center', vertical:'middle'}
+  });
+  ws2.getRow(1).height = 38;
+
+  ws2.mergeCells('A2:K2');
+  var sub2 = ws2.getCell('A2');
+  sub2.value = 'Generado: '+new Date().toLocaleDateString('es-MX')+' | Total registros: '+datosMes.length;
+  applyStyle(sub2, {
+    font:{italic:true, size:9, color:{argb:colGris}},
+    fill:{type:'pattern', pattern:'solid', fgColor:{argb:colGrisH}},
+    alignment:{horizontal:'center', vertical:'middle'}
+  });
+  ws2.getRow(2).height = 16;
+  ws2.getRow(3).height = 8;
+
+  // Anchos columnas hoja 2
+  var w2cols = {A:14, B:10, C:22, D:8, E:24, F:12, G:12, H:36, I:20, J:20};
+  Object.keys(w2cols).forEach(function(c){ ws2.getColumn(c).width = w2cols[c]; });
+
+  // ── Tabla detalle del mes ──
+  ws2.mergeCells('A4:K4');
+  var detTit = ws2.getCell('A4');
+  detTit.value = '📌  REGISTROS DEL MES';
+  applyStyle(detTit, {
+    font:{bold:true, size:11, color:{argb:'FFFFFFFF'}},
+    fill:{type:'pattern', pattern:'solid', fgColor:{argb:colNaranja}},
+    alignment:{horizontal:'left', vertical:'middle', indent:1}
+  });
+  ws2.getRow(4).height = 22;
+
+  var detHdrs = ['Folio','Semana','Departamento','Turno','Motivo','Justificado','Fecha','Empleado'];
+  var detCols  = ['A','B','C','D','E','F','G','H'];
+  detHdrs.forEach(function(h,i){
+    var cell = ws2.getCell(detCols[i]+'5');
+    cell.value = h;
+    applyStyle(cell, hdrStyle(colNaranja));
+  });
+  ws2.getRow(5).height = 20;
+
+  // Ordenar por fecha
+  var detSorted = (datosMes||[]).slice().sort(function(a,b){
+    return (_aus_parseDate(a.fecha)||0) - (_aus_parseDate(b.fecha)||0);
+  });
+
+  detSorted.forEach(function(r, ri){
+    var san = _aus_semanaAnio(r.fecha||'');
+    var just = (r.justificado||'').toUpperCase()==='SI';
+    var rowN = 6+ri;
+    var rw = ws2.getRow(rowN);
+    rw.height = 18;
+    var bgD = ri%2===0 ? colBlanco : colGrisH;
+    // Orden: Folio, Semana(ISO), Depto, Turno, Motivo, Justificado, Fecha, Empleado
+    var vals = [r.folio, 'Sem. '+san, r.departamento||'—', r.turno||'—', r.motivo||'—', just?'✔ Sí':'✘ No', r.fecha||'', r.empleado||'—'];
+    vals.forEach(function(v,ci){
+      var cell = ws2.getCell(detCols[ci]+rowN);
+      cell.value = v;
+      var st = cellStyle(bgD);
+      if(ci===5){ st.font.color = {argb: just?colVerde:colRojo}; st.font.bold = true; }
+      if(ci===0){ st.font.color = {argb:colNaranja}; st.font.bold=true; }
+      if(ci===7){ st.alignment = {horizontal:'left', vertical:'middle', indent:1}; }
+      applyStyle(cell, st);
+    });
+  });
+
+  // ── Tabla resumen por semana del mes (hoja 2) ──
+  var nextRow2 = 7 + detSorted.length;
+  ws2.getRow(nextRow2).height = 8;
+  nextRow2++;
+
+  ws2.mergeCells('A'+nextRow2+':H'+nextRow2);
+  var semTit2 = ws2.getCell('A'+nextRow2);
+  semTit2.value = '📅  FALTAS POR SEMANA DEL MES';
+  applyStyle(semTit2, {
+    font:{bold:true, size:11, color:{argb:'FFFFFFFF'}},
+    fill:{type:'pattern', pattern:'solid', fgColor:{argb:colAzulOsc}},
+    alignment:{horizontal:'left', vertical:'middle', indent:1}
+  });
+  ws2.getRow(nextRow2).height = 22;
+  nextRow2++;
+
+  var semHdrs2 = ['Semana','Total','Justificadas','Injustificadas','Empleados que faltaron'];
+  var semCols2 = ['A','B','C','D','E'];
+  semHdrs2.forEach(function(h,i){
+    var cell = ws2.getCell(semCols2[i]+nextRow2);
+    cell.value = h;
+    applyStyle(cell, hdrStyle(colAzulOsc));
+  });
+  ws2.getRow(nextRow2).height = 20;
+  // Guardar fila de HEADERS de semanas (para tabla áreas — el título combina A:J así que no se puede usar)
+  var semSeccionInicioRow = nextRow2;  // fila de headers semanas, G-I están libres aquí
+  nextRow2++;
+
+  var semT2=0, semJ2=0, semI2=0;
+  semOrden.forEach(function(s, si){
+    var ds2 = porSem[s];
+    if(!ds2 || ds2.t === 0) return;
+    semT2+=ds2.t; semJ2+=ds2.j; semI2+=ds2.i;
+    var empArr = Object.keys(ds2.emp).sort();
+    var bgSem  = si%2===0 ? colBlanco : colGrisH;
+    var numEmp = empArr.length;
+    // Fila cabecera de la semana (combina col A con tantas filas como empleados)
+    if(numEmp > 1){
+      ws2.mergeCells('A'+nextRow2+':A'+(nextRow2+numEmp-1));
+    }
+    var cSem = ws2.getCell('A'+nextRow2);
+    cSem.value = 'Sem. '+ds2.semAnio;
+    applyStyle(cSem, {
+      font:{bold:true, color:{argb:colAzulOsc}, size:10},
+      fill:{type:'pattern', pattern:'solid', fgColor:{argb:bgSem}},
+      alignment:{horizontal:'center', vertical:'middle', wrapText:true},
+      border:{top:{style:'thin',color:{argb:'FFE2E8F0'}},left:{style:'thin',color:{argb:'FFE2E8F0'}},bottom:{style:'thin',color:{argb:'FFE2E8F0'}},right:{style:'thin',color:{argb:'FFE2E8F0'}}}
+    });
+    // Cols B,C,D solo en primera fila de la semana (merged)
+    if(numEmp > 1){
+      ws2.mergeCells('B'+nextRow2+':B'+(nextRow2+numEmp-1));
+      ws2.mergeCells('C'+nextRow2+':C'+(nextRow2+numEmp-1));
+      ws2.mergeCells('D'+nextRow2+':D'+(nextRow2+numEmp-1));
+    }
+    [ds2.t, ds2.j, ds2.i].forEach(function(v, ci){
+      var cell = ws2.getCell(['B','C','D'][ci]+nextRow2);
+      cell.value = v;
+      var st = cellStyle(bgSem, ci===1?colVerde:(ci===2?colRojo:colTexto), true);
+      st.alignment.vertical = 'middle';
+      applyStyle(cell, st);
+    });
+    // Empleados listados uno por fila en col E con conteo de faltas
+    empArr.forEach(function(emp, ei){
+      var rowEmp = nextRow2 + ei;
+      ws2.getRow(rowEmp).height = 18;
+      var cEmp = ws2.getCell('E'+rowEmp);
+      var nFaltas = ds2.emp[emp]||1;
+      cEmp.value = (ei+1)+'. '+emp+' ('+nFaltas+' falta'+(nFaltas>1?'s':'')+')';
+      var stEmp = cellStyle(bgSem);
+      stEmp.alignment = {horizontal:'left', vertical:'middle', wrapText:false, indent:1};
+      applyStyle(cEmp, stEmp);
+    });
+    nextRow2 += numEmp;
+    // Línea separadora
+    ws2.getRow(nextRow2).height = 4;
+    nextRow2++;
+  });
+  // Total
+  ['TOTAL', semT2, semJ2, semI2, ''].forEach(function(v,ci){
+    var cell = ws2.getCell(semCols2[ci]+nextRow2);
+    cell.value = v;
+    applyStyle(cell, hdrStyle(colAzulOsc));
+  });
+  ws2.getRow(nextRow2).height = 20;
+  nextRow2 += 2;
+
+  // ── Tabla faltas por área del mes — posicionada a la DERECHA de la tabla semanas ──
+  var porArea = {};
+  (datosMes||[]).forEach(function(r){
+    var area = r.departamento||'Sin área';
+    porArea[area] = (porArea[area]||0)+1;
+  });
+  var areaKeys = Object.keys(porArea).sort(function(a,b){ return porArea[b]-porArea[a]; });
+  var totalAreaFaltas = (datosMes||[]).length;
+
+  // Anclar la tabla de áreas a la derecha desde la misma fila donde empieza la sección semanas
+  var arTitleRow = semSeccionInicioRow;
+
+  ws2.getColumn('I').width = 30;
+  ws2.getColumn('J').width = 12;
+  ws2.getColumn('K').width = 10;
+
+  ws2.mergeCells('I'+arTitleRow+':K'+arTitleRow);
+  var arTit = ws2.getCell('I'+arTitleRow);
+  arTit.value = '🏢  FALTAS POR ÁREA — '+MESES_NOMBRES[mes]+' '+anio;
+  applyStyle(arTit, {
+    font:{bold:true, size:11, color:{argb:'FFFFFFFF'}},
+    fill:{type:'pattern', pattern:'solid', fgColor:{argb:colNaranja}},
+    alignment:{horizontal:'center', vertical:'middle'}
+  });
+  ws2.getRow(arTitleRow).height = 22;
+  var arHdrRow = arTitleRow+1;
+  ['Área','Faltas','%'].forEach(function(h,i){
+    var c = ['I','J','K'][i];
+    var cell = ws2.getCell(c+arHdrRow);
+    cell.value = h;
+    applyStyle(cell, hdrStyle(colNaranja));
+  });
+  ws2.getRow(arHdrRow).height = 20;
+  var arDataStart = arHdrRow+1;
+  areaKeys.forEach(function(area, ai){
+    var cnt = porArea[area];
+    var pct = totalAreaFaltas>0 ? Math.round(cnt/totalAreaFaltas*100) : 0;
+    var bgAr = ai%2===0 ? colBlanco : colGrisH;
+    var row2A = ws2.getRow(arDataStart+ai);
+    row2A.height = 18;
+    var cellA = ws2.getCell('I'+(arDataStart+ai));
+    cellA.value = area;
+    var stA = cellStyle(bgAr); stA.alignment.horizontal='left'; stA.alignment.indent=1;
+    applyStyle(cellA, stA);
+    var cellN = ws2.getCell('J'+(arDataStart+ai));
+    cellN.value = cnt;
+    applyStyle(cellN, cellStyle(bgAr, cnt>3?colRojo:(cnt>1?colNaranja:colTexto), cnt>1));
+    var cellP = ws2.getCell('K'+(arDataStart+ai));
+    cellP.value = pct+'%';
+    applyStyle(cellP, cellStyle(bgAr, colGris, false));
+  });
+  // Fila total área
+  var arTotRow = arDataStart + areaKeys.length;
+  ['TOTAL', totalAreaFaltas, '100%'].forEach(function(v,i){
+    var c = ['I','J','K'][i];
+    var cell = ws2.getCell(c+arTotRow);
+    cell.value = v;
+    applyStyle(cell, hdrStyle(colAzulOsc));
+  });
+  ws2.getRow(arTotRow).height = 20;
+
+
+  nextRow2 = Math.max(nextRow2, arTotRow+2);
+
+  // ── Tabla 3 meses anteriores ──
+  ws2.mergeCells('A'+nextRow2+':H'+nextRow2);
+  var hist3Tit = ws2.getCell('A'+nextRow2);
+  hist3Tit.value = '📆  HISTORIAL DE FALTAS — ÚLTIMOS 3 MESES';
+  applyStyle(hist3Tit, {
+    font:{bold:true, size:11, color:{argb:'FFFFFFFF'}},
+    fill:{type:'pattern', pattern:'solid', fgColor:{argb:'FF374151'}},
+    alignment:{horizontal:'left', vertical:'middle', indent:1}
+  });
+  ws2.getRow(nextRow2).height = 22;
+  nextRow2++;
+
+  // Consolidar: mes actual + 3 meses anteriores
+  // nmAct = mes actual, nm0/nm1/nm2 = anteriores más reciente a más antiguo
+  var nmAct = MESES_CORTOS[mes]+' '+anio;
+  var nm0 = MESES_CORTOS[meses3[0]?meses3[0].mes:0]+' '+(meses3[0]?meses3[0].anio:'');
+  var nm1 = MESES_CORTOS[meses3[1]?meses3[1].mes:0]+' '+(meses3[1]?meses3[1].anio:'');
+  var nm2 = MESES_CORTOS[meses3[2]?meses3[2].mes:0]+' '+(meses3[2]?meses3[2].anio:'');
+
+  var empHist = {};
+  // Agregar mes actual
+  (datosMes||[]).forEach(function(r){
+    if(!empHist[r.empleado]) empHist[r.empleado] = {};
+    if(!empHist[r.empleado][nmAct]) empHist[r.empleado][nmAct] = {t:0,j:0};
+    empHist[r.empleado][nmAct].t++;
+    if((r.justificado||'').toUpperCase()==='SI') empHist[r.empleado][nmAct].j++;
+  });
+  // Agregar 3 meses anteriores
+  meses3.forEach(function(mb){
+    var nm = MESES_CORTOS[mb.mes]+' '+mb.anio;
+    (mb.datos||[]).forEach(function(r){
+      if(!empHist[r.empleado]) empHist[r.empleado] = {};
+      if(!empHist[r.empleado][nm]) empHist[r.empleado][nm] = {t:0,j:0};
+      empHist[r.empleado][nm].t++;
+      if((r.justificado||'').toUpperCase()==='SI') empHist[r.empleado][nm].j++;
+    });
+  });
+
+  // Anchos columnas historial: #, Empleado, mes actual, mes-1, mes-2, mes-3, Total
+  ws2.getColumn('A').width = 6;
+  ws2.getColumn('B').width = 32;
+  ws2.getColumn('C').width = 14;
+  ws2.getColumn('D').width = 14;
+  ws2.getColumn('E').width = 14;
+  ws2.getColumn('F').width = 14;
+  ws2.getColumn('G').width = 10;
+
+  var h3hdrs = ['#', 'Empleado', nmAct, nm0, nm1, nm2, 'Total'];
+  var h3cols = ['A','B','C','D','E','F','G'];
+  h3hdrs.forEach(function(h,i){
+    var cell = ws2.getCell(h3cols[i]+nextRow2);
+    cell.value = h;
+    applyStyle(cell, hdrStyle('FF374151'));
+  });
+  ws2.getRow(nextRow2).height = 22;
+  nextRow2++;
+
+  // Ordenar: primero los que tienen faltas en mes actual, luego resto alfabético
+  function _hVal(emp, nm){ return empHist[emp]&&empHist[emp][nm] ? empHist[emp][nm].t : 0; }
+  function _hJust(emp, nm){ return empHist[emp]&&empHist[emp][nm] ? empHist[emp][nm].j : 0; }
+  function _hStr(emp, nm){
+    var t = _hVal(emp,nm);
+    var j = _hJust(emp,nm);
+    if(t===0) return '—';
+    return j>0 ? t+' ('+j+')' : ''+t;
+  }
+
+  var empKeys = Object.keys(empHist).filter(function(e){
+    return _hVal(e,nmAct) > 0;
+  }).sort(function(a,b){
+    var totA = _hVal(a,nmAct)+_hVal(a,nm0)+_hVal(a,nm1)+_hVal(a,nm2);
+    var totB = _hVal(b,nmAct)+_hVal(b,nm0)+_hVal(b,nm1)+_hVal(b,nm2);
+    if(totB !== totA) return totB-totA;
+    return a.localeCompare(b);
+  });
+
+  empKeys.forEach(function(emp, ei){
+    var fAct = _hVal(emp,nmAct);
+    var f0v  = _hVal(emp,nm0);
+    var f1v  = _hVal(emp,nm1);
+    var f2v  = _hVal(emp,nm2);
+    var tot  = fAct+f0v+f1v+f2v;
+    var bgH  = colNaranjaL;
+    var rw = ws2.getRow(nextRow2);
+    rw.height = 18;
+    // Número
+    var cNum = ws2.getCell('A'+nextRow2);
+    cNum.value = ei+1;
+    var stN = cellStyle(bgH, colGris, false);
+    stN.alignment = {horizontal:'center', vertical:'middle'};
+    applyStyle(cNum, stN);
+    // Empleado
+    var cEmpH = ws2.getCell('B'+nextRow2);
+    cEmpH.value = emp;
+    var stE = cellStyle(bgH, colNaranja, true);
+    stE.alignment = {horizontal:'left', vertical:'middle', indent:1};
+    applyStyle(cEmpH, stE);
+    // Faltas por mes con justificadas entre paréntesis si aplica
+    [_hStr(emp,nmAct), _hStr(emp,nm0), _hStr(emp,nm1), _hStr(emp,nm2), tot].forEach(function(v,ci){
+      var cell = ws2.getCell(h3cols[ci+2]+nextRow2);
+      cell.value = v;
+      var color = ci===4 ? (tot>3?colRojo:(tot>1?colNaranja:colTexto)) : colTexto;
+      var st = cellStyle(bgH, color, ci===4);
+      st.alignment = {horizontal:'center', vertical:'middle'};
+      applyStyle(cell, st);
+    });
+    nextRow2++;
+  });
+
+  if(empKeys.length===0){
+    ws2.mergeCells('A'+nextRow2+':G'+nextRow2);
+    var noEmp = ws2.getCell('A'+nextRow2);
+    noEmp.value = 'Sin registros';
+    applyStyle(noEmp, cellStyle(colGrisH, colGris, false));
+    ws2.getRow(nextRow2).height = 18;
+  }
+
+  // ── Descargar ──
+  wb.xlsx.writeBuffer().then(function(buffer){
+    var blob = new Blob([buffer], {type:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'});
+    var url  = URL.createObjectURL(blob);
+    var a    = document.createElement('a');
+    a.href   = url;
+    a.download = 'Ausentismo_'+anio+'_'+MESES_CORTOS[mes]+'.xlsx';
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+    rhAlert('success','Excel generado','El reporte se descargó correctamente.',3000);
+  }).catch(function(err){
+    rhAlert('error','Error al generar Excel',''+err);
+  });
+}
+
+function _ausModalEditar(r){
+  if(!r) return;
+  var optsMotivo=MOTIVOS_AUSENTISMO.map(function(m){
+    return '<option'+(r.motivo===m?' selected':'')+'>'+m+'</option>';
+  }).join('');
+  var fechaInput='';
+  if(r.fecha && r.fecha.indexOf('/')>-1){var p=r.fecha.split('/');fechaInput=p[2]+'-'+p[1]+'-'+p[0];}
+  else fechaInput=r.fecha||'';
+  Swal.fire({
+    title:'Editar Ausentismo — '+r.folio,
+    width:'580px',
+    html:'<div class="text-start row g-2">'
+      +'<div class="col-12"><label class="form-label small fw-bold">Empleado</label>'
+      +'<input class="form-control form-control-sm" value="'+(r.empleado||'')+'" readonly style="background:#f8fafc"></div>'
+      +'<div class="col-md-6"><label class="form-label small fw-bold">Fecha</label>'
+      +'<input id="aus-ed-fecha" type="date" class="form-control form-control-sm" value="'+fechaInput+'"></div>'
+      +'<div class="col-md-6"><label class="form-label small fw-bold">Turno</label>'
+      +'<select id="aus-ed-turno" class="form-select form-select-sm">'
+      +'<option'+(r.turno==='MATUTINO'?' selected':'')+'>MATUTINO</option>'
+      +'<option'+(r.turno==='VESPERTINO'?' selected':'')+'>VESPERTINO</option>'
+      +'<option'+(r.turno==='NOCTURNO'?' selected':'')+'>NOCTURNO</option>'
+      +'</select></div>'
+      +'<div class="col-md-6"><label class="form-label small fw-bold">Motivo</label>'
+      +'<select id="aus-ed-motivo" class="form-select form-select-sm"><option value="">— Seleccionar —</option>'+optsMotivo+'</select></div>'
+      +'<div class="col-md-6"><label class="form-label small fw-bold">¿Justificado?</label>'
+      +'<select id="aus-ed-just" class="form-select form-select-sm">'
+      +'<option value="NO"'+(r.justificado==='NO'?' selected':'')+'>No</option>'
+      +'<option value="SI"'+(r.justificado==='SI'?' selected':'')+'>Sí</option>'
+      +'</select></div>'
+      +'<div class="col-12"><label class="form-label small fw-bold">Documento de soporte</label>'
+      +'<input id="aus-ed-doc" class="form-control form-control-sm" value="'+(r.documento||r.documentoSoporte||'')+'"></div>'
+      +'<div class="col-12"><label class="form-label small fw-bold">Observaciones</label>'
+      +'<input id="aus-ed-obs" class="form-control form-control-sm" value="'+(r.observaciones||'')+'"></div>'
+      +'</div>',
+    showCancelButton:true,
+    confirmButtonText:'<i class="fas fa-save me-1"></i>Guardar',
+    cancelButtonText:'Cancelar',confirmButtonColor:'#ea580c',
+    preConfirm:function(){
+      var f=document.getElementById('aus-ed-fecha').value;
+      if(!f){Swal.showValidationMessage('La fecha es obligatoria');return false;}
+      var p=f.split('-');
+      return {
+        folio:      r.folio,
+        fecha:      p.length===3?p[2]+'/'+p[1]+'/'+p[0]:f,
+        turno:      document.getElementById('aus-ed-turno').value,
+        motivo:     document.getElementById('aus-ed-motivo').value,
+        justificado:document.getElementById('aus-ed-just').value,
+        documento:  document.getElementById('aus-ed-doc').value,
+        observaciones:document.getElementById('aus-ed-obs').value
+      };
+    }
+  }).then(function(res){
+    if(!res.isConfirmed) return;
+    toggleSaving(true,'Guardando...');
+    google.script.run
+      .withSuccessHandler(function(r){
+        toggleSaving(false);
+        if(r==='OK'){rhToast('success','✅ Registro actualizado');setTimeout(loadConsultaAusentismo,1200);}
+        else Swal.fire('Error',r,'error');
+      })
+      .withFailureHandler(function(e){toggleSaving(false);Swal.fire('Error',''+e,'error');})
+      .editarRegistroIncidencia({hoja:'AUSENTISMO', campos:res.value});
+  });
+}
+// ══════════════════════════════════════════════════════════════════════
+//  2. RETARDOS
+// ══════════════════════════════════════════════════════════════════════

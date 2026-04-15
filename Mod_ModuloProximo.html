@@ -1,0 +1,20 @@
+function loadModuloProximo(mod){
+  var titulo=MODULE_TITLES[mod]||mod;
+  var icono =_ICONS_MOD[mod] ||'fa-circle';
+  var color =_COLORS_MOD[mod]||'var(--rh-color)';
+  document.getElementById('content-area').innerHTML=
+    '<div class="card-pro" style="max-width:580px;margin:0 auto;text-align:center;padding:48px 32px">'
+    +'<div style="width:80px;height:80px;border-radius:50%;background:'+color+'20;display:flex;align-items:center;justify-content:center;margin:0 auto 20px">'
+    +'<i class="fas '+icono+'" style="font-size:2.2rem;color:'+color+'"></i></div>'
+    +'<h4 class="fw-bold mb-2">'+titulo+'</h4>'
+    +'<p class="text-muted mb-0">Módulo en construcción.<br>Pronto podrás registrar y consultar <strong>'+titulo.toLowerCase()+'</strong>.</p>'
+    +'<div class="mt-4 p-3 rounded-3" style="background:#f8fafc;border:1px dashed #cbd5e1">'
+    +'<small class="text-muted"><i class="fas fa-info-circle me-1"></i>La tabla ya fue creada en el libro <strong>RecursosHumanos</strong>.</small>'
+    +'</div></div>';
+}
+
+// ══════════════════════════════════════════════════════════════════════
+//  MÓDULO: TABULADOR DE SALARIOS
+// ══════════════════════════════════════════════════════════════════════
+var _tab_datos      = null;
+var _tab_catActiva  = 0;

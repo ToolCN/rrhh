@@ -1,0 +1,139 @@
+function loadAusentismo(){
+  inc_mes  = new Date().getMonth();
+  inc_anio = new Date().getFullYear();
+  showLoader('Cargando módulo de Ausentismo...');
+  google.script.run
+    .withSuccessHandler(function(cat){
+      hideLoader();
+      _incCat=cat.empleados||[];
+      renderFormAusentismo();
+    })
+    .withFailureHandler(function(e){hideLoader();Swal.fire('Error',''+e,'error');})
+    .obtenerCatalogosIncidencias();
+}
+function inc_cambiarMes(delta, modulo){
+  inc_mes += delta;
+  if(inc_mes < 0){ inc_mes=11; inc_anio--; }
+  if(inc_mes > 11){ inc_mes=0; inc_anio++; }
+  // Actualizar etiqueta del navegador en pantalla
+  var spans=document.querySelectorAll('.inc-nav-mes-label');
+  spans.forEach(function(s){ s.innerText=MESES_NOMBRES[inc_mes]+' '+inc_anio; });
+  if(modulo==='AUSENTISMO')    _incCargarAusentismoMes();
+  else if(modulo==='RETARDOS') _incCargarRetardosMes();
+  else if(modulo==='PERMISOS') _incCargarPermisosMes();
+}
+function _incCargarAusentismoMes(){
+  var m=inc_mes, a=inc_anio;
+  showLoader('Cargando ausentismo de '+MESES_NOMBRES[m]+' '+a+'...');
+  google.script.run
+    .withSuccessHandler(function(lista){hideLoader();renderTablaAusentismo(lista||[]);})
+    .withFailureHandler(function(e){hideLoader();Swal.fire('Error',''+e,'error');})
+    .obtenerAusentismo({mes:m, anio:a});
+}
+function _incCargarRetardosMes(){
+  var m=inc_mes, a=inc_anio;
+  showLoader('Cargando retardos de '+MESES_NOMBRES[m]+' '+a+'...');
+  google.script.run
+    .withSuccessHandler(function(lista){hideLoader();renderTablaRetardos(lista||[]);})
+    .withFailureHandler(function(e){hideLoader();Swal.fire('Error',''+e,'error');})
+    .obtenerRetardos({mes:m, anio:a});
+}
+function _incCargarPermisosMes(){
+  var m=inc_mes, a=inc_anio;
+  showLoader('Cargando permisos de '+MESES_NOMBRES[m]+' '+a+'...');
+  google.script.run
+    .withSuccessHandler(function(lista){hideLoader();renderTablaPermisos(lista||[]);})
+    .withFailureHandler(function(e){hideLoader();Swal.fire('Error',''+e,'error');})
+    .obtenerPermisosEmpleados({mes:m, anio:a});
+}
+function _incNavMes(modulo){
+  var mesTxt=MESES_NOMBRES[inc_mes]+' '+inc_anio;
+  return '<div style="display:flex;align-items:center;gap:6px">'
+    +'<button onclick="inc_cambiarMes(-1,\''+modulo+'\')" style="background:#f1f5f9;border:none;border-radius:50%;width:28px;height:28px;cursor:pointer;font-size:.9rem">&#8249;</button>'
+    +'<span class="inc-nav-mes-label" style="font-weight:700;color:#0f172a;min-width:120px;text-align:center;font-size:.85rem">'+mesTxt+'</span>'
+    +'<button onclick="inc_cambiarMes(1,\''+modulo+'\')" style="background:#f1f5f9;border:none;border-radius:50%;width:28px;height:28px;cursor:pointer;font-size:.9rem">&#8250;</button>'
+    +'</div>';
+}
+
+function renderFormAusentismo(){
+  var optsMotivo=MOTIVOS_AUSENTISMO.map(function(m){return '<option>'+m+'</option>';}).join('');
+
+  document.getElementById('content-area').innerHTML=
+    '<div class="card-pro mb-3">'
+    +'<div class="d-flex justify-content-between align-items-center mb-4">'
+    +'<div class="d-flex align-items-center gap-3">'
+    +'<div style="width:48px;height:48px;border-radius:12px;background:#ea580c20;display:flex;align-items:center;justify-content:center">'
+    +'<i class="fas fa-user-clock" style="color:#ea580c;font-size:1.4rem"></i></div>'
+    +'<div><h5 class="fw-bold m-0">Registrar Ausentismo</h5>'
+    +'<p class="text-muted small m-0">Registra la falta del empleado</p></div></div>'
+    +'<button class="btn btn-sm fw-bold rounded-pill px-3" style="background:#1a237e;color:white" onclick="loadConsultaAusentismo()">'
+    +'<i class="fas fa-list me-1"></i>Ver registros</button></div>'
+
+    +'<div class="row g-3 mb-4">'
+    +'<div class="col-md-6"><label class="form-label small fw-bold">Empleado *</label>'
+    +_incCampoEmp('aus-emp-txt','aus-emp','aus-emp-ac','_ausCargarEmp')+'</div>'
+    +'<div class="col-md-3"><label class="form-label small fw-bold">Núm. Empleado</label>'
+    +'<input id="aus-numEmp" class="form-control" readonly style="background:#f8fafc"></div>'
+    +'<div class="col-md-3"><label class="form-label small fw-bold">Fecha *</label>'
+    +'<input id="aus-fecha" type="date" class="form-control" value="'+_incHoyDate()+'"></div>'
+    +'<div class="col-md-6"><label class="form-label small fw-bold">Departamento</label>'
+    +'<input id="aus-dept" class="form-control" placeholder="Se carga al seleccionar empleado"></div>'
+    +'<div class="col-md-6"><label class="form-label small fw-bold">Puesto</label>'
+    +'<input id="aus-puesto" class="form-control" placeholder="Se carga al seleccionar empleado"></div>'
+    +'</div>'
+
+    +'<div class="row g-3 mb-4">'
+    +'<div class="col-md-4"><label class="form-label small fw-bold">Turno</label>'
+    +_incBtnTurno('aus-turno',null)+'</div>'
+    +'<div class="col-md-4"><label class="form-label small fw-bold">Motivo *</label>'
+    +'<select id="aus-motivo" class="form-select"><option value="">— Seleccionar —</option>'+optsMotivo+'</select></div>'
+    +'<div class="col-md-4"><label class="form-label small fw-bold">¿Justificado?</label>'
+    +_incBtnJust('aus-just')+'</div>'
+    +'<div class="col-12"><label class="form-label small fw-bold">Documento de soporte</label>'
+    +'<input id="aus-doc" class="form-control" placeholder="Folio IMSS, número de justificante, etc."></div>'
+    +'<div class="col-12"><label class="form-label small fw-bold">Observaciones</label>'
+    +'<textarea id="aus-obs" class="form-control" rows="2" placeholder="Notas adicionales..."></textarea></div>'
+    +'</div>'
+
+    +'<div class="d-flex gap-3 justify-content-end">'
+    +'<button class="btn btn-outline-secondary rounded-pill px-4" onclick="renderFormAusentismo()">'
+    +'<i class="fas fa-undo me-2"></i>Limpiar</button>'
+    +'<button class="btn fw-bold rounded-pill px-5" style="background:#ea580c;color:white" onclick="aus_guardar()">'
+    +'<i class="fas fa-save me-2"></i>Guardar Registro</button>'
+    +'</div></div>';
+}
+
+function _ausCargarEmp(e){
+  document.getElementById('aus-numEmp').value =e.numEmpleado||'';
+  document.getElementById('aus-dept').value   =e.area       ||'';
+  document.getElementById('aus-puesto').value =e.puesto     ||'';
+}
+
+function aus_guardar(){
+  var empleado=document.getElementById('aus-emp').value.trim();
+  var motivo  =document.getElementById('aus-motivo').value.trim();
+  var fecha   =document.getElementById('aus-fecha').value;
+  if(!empleado||!motivo||!fecha){
+    Swal.fire('Campos incompletos','Empleado, Fecha y Motivo son obligatorios.','warning');return;
+  }
+  var p=fecha.split('-'); var fechaFmt=p.length===3?p[2]+'/'+p[1]+'/'+p[0]:fecha;
+  var datos={
+    fecha:fechaFmt, empleado:empleado,
+    numEmpleado:  document.getElementById('aus-numEmp').value,
+    departamento: document.getElementById('aus-dept').value,
+    puesto:       document.getElementById('aus-puesto').value,
+    turno:        document.getElementById('aus-turno').value,
+    motivo:motivo,
+    justificado:  document.getElementById('aus-just').value,
+    documento:    document.getElementById('aus-doc').value,
+    observaciones:document.getElementById('aus-obs').value
+  };
+  toggleSaving(true,'Guardando...');
+  google.script.run
+    .withSuccessHandler(function(folio){
+      toggleSaving(false);
+      rhAlert('success','✅ Ausentismo registrado','Folio: '+folio,2200);
+    })
+    .withFailureHandler(function(e){toggleSaving(false);Swal.fire('Error',''+e,'error');})
+    .guardarAusentismo(datos);
+}

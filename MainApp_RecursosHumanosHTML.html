@@ -864,6 +864,7 @@ var MESES_NOMBRES = ['Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','A
 var inc_mes  = new Date().getMonth();
 var inc_anio = new Date().getFullYear();
 
+// ════════════════════════ MÓDULOS — rebuild_main.js ════════════════════════ //
 function loadDashboardRH(){
   showLoader('Cargando dashboard...');
   google.script.run
@@ -1059,7 +1060,6 @@ function dash_render(res){
 //  MÓDULO: PLANTILLA ACTIVA
 // ══════════════════════════════════════════════════════════
 var rh_datos=[], rh_originales=[], rh_catalogoAreas={}, rh_catalogoProcesos=[], rh_idsModificados=new Set(), rh_camposModificados={}, rh_ordenModificados=[], rh_idEditando=null;
-
 function loadPlantilla(){
   showLoader('Cargando plantilla...');
   google.script.run
@@ -1625,7 +1625,6 @@ function bajas_filtrar(){
 // ══════════════════════════════════════════════════════════
 var vac_vacantes = [];
 var vac_cat = { areas:[], procesos:[], puestos:[], tabulador:{} }; // catálogos para Vacantes
-
 function loadVacantes(){
   showLoader('Cargando vacantes...');
   // Primero carga los catálogos, luego las vacantes
@@ -2027,7 +2026,6 @@ function vacantes_cerrar(id){
 //  MÓDULO: VACACIONES (Solicitar)
 // ══════════════════════════════════════════════════════════
 var vac_trabajadores=[], vac_activo=null;
-
 function loadVacaciones(){
   showLoader('Cargando vacaciones...');
   google.script.run
@@ -2293,7 +2291,6 @@ function vac_exportarExcel(){
 //  MÓDULO: AUTORIZAR VACACIONES
 // ══════════════════════════════════════════════════════════
 var aut_solicitudes=[], aut_seleccionados=new Set();
-
 function loadAutorizar(){
   showLoader('Cargando solicitudes...');
   google.script.run
@@ -2393,7 +2390,6 @@ function fabRechazar(){
 //  MÓDULO: APLICAR VACACIONES
 // ══════════════════════════════════════════════════════════
 var apl_solicitudes=[], apl_seleccionados=new Set();
-
 function loadAplicar(){
   showLoader('Cargando autorizadas...');
   // Primero carga las autorizadas
@@ -2489,7 +2485,6 @@ function _consFmtFecha(v){
   }
   return s;
 }
-
 function loadConsulta(){
   showLoader('Cargando consulta...');
   google.script.run
@@ -3057,7 +3052,6 @@ var ARTICULOS_REGLAMENTO = [
   'Art. 5 - Relaciones laborales','Art. 6 - Confidencialidad',
   'Art. 134 LFT - Obligaciones del trabajador','Art. 47 LFT - Causas de rescisión'
 ];
-
 function loadActas() {
   showLoader('Cargando módulo de sanciones...');
   google.script.run
@@ -3999,7 +3993,6 @@ function aus_guardar(){
     .withFailureHandler(function(e){toggleSaving(false);Swal.fire('Error',''+e,'error');})
     .guardarAusentismo(datos);
 }
-
 function loadConsultaAusentismo(){
   var m=inc_mes, a=inc_anio;
   showLoader('Cargando ausentismo de '+MESES_NOMBRES[m]+' '+a+'...');
@@ -5033,7 +5026,6 @@ function ret_guardar(){
     .withFailureHandler(function(e){toggleSaving(false);Swal.fire('Error',''+e,'error');})
     .guardarRetardo(datos);
 }
-
 function loadConsultaRetardos(){
   var m=inc_mes, a=inc_anio;
   showLoader('Cargando retardos de '+MESES_NOMBRES[m]+' '+a+'...');
@@ -5370,7 +5362,6 @@ function per_guardar(){
     .withFailureHandler(function(e){toggleSaving(false);Swal.fire('Error',''+e,'error');})
     .guardarPermisoEmpleado(datos);
 }
-
 
 function loadConsultaPermisos(){
   var m=inc_mes, a=inc_anio;
@@ -6638,7 +6629,6 @@ function loadModuloProximo(mod){
 // ══════════════════════════════════════════════════════════════════════
 var _tab_datos      = null;
 var _tab_catActiva  = 0;
-
 function loadTabulador(){
   _tab_catActiva = 0;
   showLoader('Cargando tabulador...');
@@ -7118,7 +7108,6 @@ function _capSvg(val){
   var n = found || CAP_NIVELES[0];
   return '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="28" height="28">'+n.svg+'</svg>';
 }
-
 function loadCapacitacion(){
   _cap_areaActiva = 0;
   showLoader('Cargando Capacitación...');
@@ -8235,7 +8224,6 @@ var EVAL_CALIF_LABELS = {
   'A': { label:'A — Aprobado',                color:'#16a34a', bg:'#dcfce7' },
   '':  { label:'Sin evaluar',                 color:'#94a3b8', bg:'#f1f5f9' }
 };
-
 function loadAjustesCat(){
   showLoader('Cargando evaluaciones...');
   google.script.run
@@ -8985,4 +8973,7 @@ function _evalImprimir(){
 
 </script>
 </body>
+</html>
+
+</script>
 </html>

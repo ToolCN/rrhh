@@ -1,0 +1,46 @@
+function loadBajas(){
+  showLoader('Cargando bajas...');
+  google.script.run
+    .withSuccessHandler(function(res){
+      hideLoader();
+      var bajas=(res.lista||[]).filter(function(p){return p.estado==='BAJA';});
+      var html='<div class="card-pro">'
+        +'<div class="d-flex flex-wrap gap-2 align-items-center mb-3">'
+        +'<input id="bajas-buscar" class="form-control form-control-sm" style="max-width:220px" placeholder="🔍 Buscar..." oninput="bajas_filtrar()">'
+        +'<span class="badge rounded-pill ms-auto" style="background:#fef2f2;color:#991b1b;font-size:.8rem;padding:6px 12px"><i class="fas fa-user-minus me-1"></i>'+bajas.length+' bajas</span>'
+        +'</div>'
+        +'<div id="bajas-grid"></div>'
+        +'</div>';
+      document.getElementById('content-area').innerHTML=html;
+      window._bajasData=bajas;
+      bajas_filtrar();
+    })
+    .withFailureHandler(function(e){hideLoader();Swal.fire('Error',''+e,'error');})
+    .obtenerDatosRH();
+}
+function bajas_filtrar(){
+  var f=(document.getElementById('bajas-buscar').value||'').toLowerCase();
+  var filtrados=(window._bajasData||[]).filter(function(p){return !f||p.nombre.toLowerCase().includes(f);});
+  var html='';
+  filtrados.forEach(function(p){
+    var fotoUrl=(p.foto&&p.foto.trim()&&p.foto!=='undefined')?p.foto:'https://ui-avatars.com/api/?name='+encodeURIComponent(p.nombre||'?')+'&background=fef2f2&color=991b1b&size=80';
+    html+='<div style="display:flex;align-items:center;gap:14px;padding:12px 16px;border-bottom:1.5px solid #e2e8f0;background:white">'
+      +'<img src="'+fotoUrl+'" style="width:48px;height:48px;border-radius:50%;object-fit:cover;border:2px solid #fca5a5">'
+      +'<div style="flex:1">'
+      +'<div style="font-weight:700;font-size:.9rem;color:#0f172a">'+p.nombre+'</div>'
+      +'<div style="font-size:.78rem;color:#64748b">Clave: '+p.clave+' | Área: '+p.area+' | Puesto: '+(p.puesto||'—')+'</div>'
+      +'<div style="font-size:.78rem;color:#64748b">Ingreso: '+p.ingreso+'</div>'
+      +'</div>'
+      +'<span style="background:#fef2f2;color:#991b1b;font-weight:700;font-size:.75rem;border-radius:6px;padding:3px 10px;border:1px solid #fca5a5">BAJA</span>'
+      +'</div>';
+  });
+  document.getElementById('bajas-grid').innerHTML=filtrados.length?
+    '<div style="border:1.5px solid #e2e8f0;border-radius:10px;overflow:hidden">'+html+'</div>':
+    '<p class="text-center text-muted py-5">Sin registros de baja.</p>';
+}
+
+// ══════════════════════════════════════════════════════════
+//  MÓDULO: VACANTES
+// ══════════════════════════════════════════════════════════
+var vac_vacantes = [];
+var vac_cat = { areas:[], procesos:[], puestos:[], tabulador:{} }; // catálogos para Vacantes

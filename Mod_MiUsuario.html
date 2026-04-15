@@ -1,0 +1,31 @@
+function loadMiUsuario(){
+  if(!currentUser){return;}
+  var perms=(currentUser.permisos||'').split(',').map(function(p){return p.trim();}).filter(function(p){return p.startsWith('RH_');});
+  document.getElementById('content-area').innerHTML=
+    '<div class="card-pro" style="max-width:480px;margin:0 auto">'
+    +'<h5 class="fw-bold mb-4"><i class="fas fa-user-circle me-2" style="color:var(--rh-color)"></i>Mi Perfil</h5>'
+    +'<div class="mb-3"><label class="form-label small fw-bold text-muted">NOMBRE</label><div class="fw-bold fs-5">'+currentUser.nombre+'</div></div>'
+    +'<div class="mb-3"><label class="form-label small fw-bold text-muted">PERMISOS ACTIVOS</label><div class="d-flex flex-wrap gap-1 mt-1">'+perms.map(function(p){return '<span class="badge bg-primary-subtle text-primary">'+p+'</span>';}).join('')+'</div></div>'
+    +'<hr>'
+    +'<label class="form-label small fw-bold">CAMBIAR CONTRASEÑA</label>'
+    +'<input type="password" id="mu-pass-new" class="form-control mb-2" placeholder="Nueva contraseña">'
+    +'<input type="password" id="mu-pass-conf" class="form-control mb-3" placeholder="Confirmar contraseña">'
+    +'<button class="btn fw-bold rounded-pill px-4" style="background:var(--rh-color);color:white" onclick="mu_cambiarPass()">'
+    +'<i class="fas fa-key me-2"></i>Actualizar Contraseña</button>'
+    +'</div>';
+}
+function mu_cambiarPass(){
+  var p1=document.getElementById('mu-pass-new').value.trim();
+  var p2=document.getElementById('mu-pass-conf').value.trim();
+  if(!p1){Swal.fire('Aviso','Escribe la nueva contraseña','warning');return;}
+  if(p1!==p2){Swal.fire('Error','Las contraseñas no coinciden','error');return;}
+  toggleSaving(true,'Actualizando...');
+  google.script.run
+    .withSuccessHandler(function(){toggleSaving(false);rhToast('success','✅ Contraseña actualizada');})
+    .withFailureHandler(function(e){toggleSaving(false);Swal.fire('Error',''+e,'error');})
+    .actualizarPasswordUsuario(currentUser.nombre,p1);
+}
+
+// ══════════════════════════════════════════════════════════
+//  MÓDULO: USUARIOS (Admin)
+// ══════════════════════════════════════════════════════════

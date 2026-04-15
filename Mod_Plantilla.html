@@ -1,0 +1,519 @@
+function loadPlantilla(){
+  showLoader('Cargando plantilla...');
+  google.script.run
+    .withSuccessHandler(function(res){
+      hideLoader();
+      rh_datos=res.lista||[];
+      rh_originales=JSON.parse(JSON.stringify(rh_datos));
+      rh_catalogoAreas=res.catalogoAreas||{};
+      rh_catalogoProcesos=res.catalogoProcesos||[];
+      rh_idsModificados=new Set();
+      var areasOpts='<option value="">Todas las áreas</option>';
+      Object.keys(rh_catalogoAreas).sort().forEach(function(a){areasOpts+='<option value="'+a+'">'+a+'</option>';});
+      document.getElementById('content-area').innerHTML=
+        '<div class="card-pro">'
+        +'<div class="d-flex flex-wrap gap-2 align-items-center mb-3">'
+        +'<select id="rh-filtroArea" class="form-select form-select-sm" style="max-width:180px" onchange="rh_renderizar()">'+areasOpts+'</select>'
+        +'<select id="rh-filtroEstado" class="form-select form-select-sm" style="max-width:160px" onchange="rh_renderizar()">'
+        +'<option value="">Todos los estados</option>'
+        +'<option value="ACTIVO">ACTIVO</option><option value="INCAPACIDAD">INCAPACIDAD</option><option value="BAJA">BAJA</option>'
+        +'</select>'
+        +'<input id="rh-buscar" class="form-control form-control-sm" style="max-width:200px" placeholder="🔍 Buscar nombre..." oninput="rh_renderizar()">'
+        +'<div class="ms-auto d-flex gap-2">'
+        +'<button class="btn btn-sm fw-bold rounded-pill px-3" style="background:#16a34a;color:white" onclick="rh_exportarExcel()"><i class="fas fa-file-excel me-1"></i>Excel</button>'
+
+        +''
+        +'</div></div>'
+        +'<div id="rh-grid"></div>'
+        +'</div>';
+      rh_renderizar();
+    })
+    .withFailureHandler(function(e){hideLoader();Swal.fire('Error',''+e,'error');})
+    .obtenerDatosRH();
+}
+function rh_renderizar(){
+  var fArea=document.getElementById('rh-filtroArea').value;
+  var fEst=document.getElementById('rh-filtroEstado').value;
+  var fBus=(document.getElementById('rh-buscar').value||'').toLowerCase();
+  var filtrados=rh_datos.filter(function(p){
+    var _esActivo=p.estado==='ACTIVO'||p.estado==='INCAPACIDAD';
+    return _esActivo&&(!fArea||p.area===fArea)&&(!fEst||p.estado===fEst)
+           &&(!fBus||p.nombre.toLowerCase().includes(fBus));
+  });
+  // Modificados al frente respetando el orden en que se editaron
+  filtrados.sort(function(a,b){
+    var ia=rh_ordenModificados.indexOf(a.id);
+    var ib=rh_ordenModificados.indexOf(b.id);
+    if(ia===-1 && ib===-1) return 0;
+    if(ia===-1) return 1;
+    if(ib===-1) return -1;
+    return ia-ib;
+  });
+  var html='';
+  filtrados.forEach(function(p){
+    var modificado=rh_idsModificados.has(p.id);
+    var modClass=modificado?'modificado':'';
+    var camposMod=rh_camposModificados[p.id]||new Set();
+    var pid=String(p.id);
+    var areasOpts=Object.keys(rh_catalogoAreas).map(function(a){
+      return '<option value="'+a+'"'+(p.area===a?' selected':'')+'>'+a+'</option>';
+    }).join('');
+    var fotoUrl=(p.foto&&p.foto.trim()&&p.foto!=='undefined')?p.foto
+      :'https://ui-avatars.com/api/?name='+encodeURIComponent(p.nombre||'?')+'&background=e0e7ff&color=3730a3&size=80';
+    var estadoColor={'ACTIVO':'#16a34a','INCAPACIDAD':'#d97706','BAJA':'#dc2626'}[p.estado]||'#64748b';
+    var estadoBg={'ACTIVO':'#dcfce7','INCAPACIDAD':'#fef3c7','BAJA':'#fee2e2'}[p.estado]||'#f1f5f9';
+    var cm=function(c){return camposMod.has(c)?' campo-modificado':'';};
+    html+='<div class="rh-worker-card '+modClass+'" style="border-left:3px solid '+(modificado?'#ef4444':'#e2e8f0')+'">';
+    html+='<div style="position:relative;flex-shrink:0;width:56px;height:56px" title="Clic para cambiar foto">';
+    html+='<img id="foto-img-'+pid+'" src="'+fotoUrl+'" data-id="'+pid+'" style="width:56px;height:56px;border-radius:50%;object-fit:cover;cursor:pointer;border:2px solid #e2e8f0" onclick="rh_cambiarFoto(this.dataset.id)">';
+    html+='<div style="position:absolute;bottom:0;right:0;background:var(--rh-color);color:white;border-radius:50%;width:18px;height:18px;font-size:10px;display:flex;align-items:center;justify-content:center;pointer-events:none"><i class="fas fa-camera"></i></div>';
+    html+='<input type="file" id="foto-input-'+pid+'" data-id="'+pid+'" accept="image/*" style="display:none" onchange="rh_subirFoto(this.dataset.id,this)">';
+    html+='</div>';
+    html+='<div style="flex:1;min-width:0">'
+      +'<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px">'
+      +'<span style="font-size:.68rem;font-weight:800;text-transform:uppercase;letter-spacing:.07em;background:'+estadoBg+';color:'+estadoColor+';border-radius:20px;padding:2px 10px;border:1px solid '+estadoColor+'40">'+p.estado+'</span>'
+      +(modificado?'<span style="font-size:.68rem;font-weight:700;color:var(--rh-color);background:#e0e7ff;border-radius:20px;padding:2px 8px"><i class="fas fa-pen me-1"></i>Modificado</span>':'')
+      +'</div>'
+      +'<div class="d-flex gap-2 flex-wrap">';
+    html+='<div class="field-row"><span class="lbl">NOMBRE</span><input class="val-input'+cm('nombre')+'" style="min-width:200px" data-id="'+pid+'" data-campo="nombre" value="'+(p.nombre||'')+'" onchange="rh_marcarCambio(this.dataset.id,this.dataset.campo,this.value)"></div>';
+    html+='<div class="field-row"><span class="lbl">CLAVE</span><input class="val-input'+cm('clave')+'" style="min-width:80px" data-id="'+pid+'" data-campo="clave" value="'+(p.clave||'')+'" onchange="rh_marcarCambio(this.dataset.id,this.dataset.campo,this.value)"></div>';
+    html+='<div class="field-row"><span class="lbl">AREA</span><select class="val-input'+cm('area')+'" data-id="'+pid+'" data-campo="area" onchange="rh_marcarCambio(this.dataset.id,this.dataset.campo,this.value)">'+areasOpts+'</select></div>';
+    html+='<div class="field-row"><span class="lbl">PUESTO</span><input class="val-input'+cm('puesto')+'" data-id="'+pid+'" data-campo="puesto" value="'+(p.puesto||'')+'" onchange="rh_marcarCambio(this.dataset.id,this.dataset.campo,this.value)"></div>';
+    html+='<div class="field-row"><span class="lbl">ESTADO</span>';
+    html+='<select class="val-input'+cm('estado')+'" data-id="'+pid+'" onchange="rh_cambioEstado(this.dataset.id,this.value)">';
+    html+='<option value="ACTIVO"'+(p.estado==='ACTIVO'?' selected':'')+'>ACTIVO</option>';
+    html+='<option value="INCAPACIDAD"'+(p.estado==='INCAPACIDAD'?' selected':'')+'>INCAPACIDAD</option>';
+    html+='<option value="BAJA"'+(p.estado==='BAJA'?' selected':'')+'>BAJA</option>';
+    html+='</select></div>';
+    html+='<div class="field-row"><span class="lbl">INGRESO</span><input class="val-input'+cm('ingreso')+'" type="date" data-id="'+pid+'" data-campo="ingreso" value="'+(p.ingreso||'')+'" onchange="rh_marcarCambio(this.dataset.id,this.dataset.campo,this.value)"></div>';
+    // Procesos
+    var procActivos=(p.procesos&&String(p.procesos).trim())?String(p.procesos).split(',').map(function(x){return x.trim();}).filter(Boolean):[];
+    var procChips=procActivos.length
+      ? procActivos.map(function(pr){return '<span style="background:#e0e7ff;color:#3730a3;border-radius:20px;padding:1px 8px;font-size:.7rem;font-weight:600;white-space:nowrap">'+pr+'</span>';}).join(' ')
+      : '<span style="color:#94a3b8;font-size:.75rem;font-style:italic">Sin procesos asignados</span>';
+    html+='<div class="field-row" style="align-items:flex-start;flex-direction:column;gap:4px">'
+      +'<span class="lbl">PROCESOS</span>'
+      +'<div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap">'
+      +procChips
+      +'<button class="btn btn-sm rounded-pill" style="font-size:.7rem;background:#e0e7ff;color:#3730a3;border:none;padding:2px 8px;flex-shrink:0" '
+      +'data-id="'+pid+'" onclick="rh_abrirProcesos(this.dataset.id)" title="Editar procesos">'
+      +'<i class="fas fa-cog me-1"></i>Editar</button>'
+      +'</div></div>';
+    html+='</div></div></div>';
+    if(modificado) html+='<button class="btn-undo" data-id="'+pid+'" onclick="rh_deshacer(this.dataset.id)" title="Deshacer">&#8635;</button>';
+    html+='</div>';
+  });
+  document.getElementById('rh-grid').innerHTML=html||'<p class="text-center text-muted py-5">Sin resultados.</p>';
+  rh_actualizarBoton();
+}
+function rh_abrirProcesos(id){
+  var p=rh_datos.find(function(x){return String(x.id)===String(id);});
+  if(!p) return;
+  var actuales=(p.procesos&&String(p.procesos).trim())?String(p.procesos).split(',').map(function(x){return x.trim().toUpperCase();}).filter(Boolean):[];
+  var catalogo=(rh_catalogoProcesos&&rh_catalogoProcesos.length)?rh_catalogoProcesos:actuales;
+  // Asegurar que los actuales estén en el catálogo aunque no estén en ESTANDARES
+  actuales.forEach(function(a){ if(catalogo.indexOf(a)===-1) catalogo.push(a); });
+  catalogo.sort();
+
+  var checks=catalogo.map(function(pr,i){
+    var chk=actuales.indexOf(pr)>-1?' checked':'';
+    return '<label style="display:flex;align-items:center;gap:8px;padding:5px 8px;border-radius:6px;cursor:pointer;background:'+(actuales.indexOf(pr)>-1?'#e0e7ff':'transparent')+';margin-bottom:2px">'
+      +'<input type="checkbox" id="rp-chk-'+i+'" value="'+pr+'"'+chk+' style="width:16px;height:16px;accent-color:var(--rh-color)">'
+      +'<span style="font-size:.82rem;font-weight:'+(actuales.indexOf(pr)>-1?'700':'400')+';color:#1e293b">'+pr+'</span>'
+      +'</label>';
+  }).join('');
+
+  Swal.fire({
+    title:'<i class="fas fa-cog me-2"></i>Procesos de '+p.nombre,
+    width:520,
+    html:'<div style="text-align:left">'
+      +'<div style="display:flex;gap:8px;margin-bottom:10px">'
+      +'<input id="rp-buscar" class="form-control form-control-sm" placeholder="Buscar proceso..." '
+      +'oninput="(function(){var b=this.value.toLowerCase();document.querySelectorAll(\'[id^=rp-chk-]\').forEach(function(el){var lbl=el.closest(\'label\');lbl.style.display=el.value.toLowerCase().includes(b)?\'flex\':\'none\';})}).call(this)">'
+      +'<button type="button" class="btn btn-sm" style="background:#e0e7ff;color:#3730a3;border:none;white-space:nowrap" '
+      +'onclick="document.querySelectorAll(\'[id^=rp-chk-]\').forEach(function(el){el.checked=true;})">Todos</button>'
+      +'<button type="button" class="btn btn-sm" style="background:#f1f5f9;color:#64748b;border:none;white-space:nowrap" '
+      +'onclick="document.querySelectorAll(\'[id^=rp-chk-]\').forEach(function(el){el.checked=false;})">Ninguno</button>'
+      +'</div>'
+      +'<div style="max-height:320px;overflow-y:auto;border:1px solid #e2e8f0;border-radius:8px;padding:8px">'
+      +checks
+      +'</div></div>',
+    showCancelButton:true,
+    confirmButtonText:'<i class="fas fa-save me-1"></i>Guardar Procesos',
+    cancelButtonText:'Cancelar',
+    confirmButtonColor:'var(--rh-color)',
+    preConfirm:function(){
+      var sel=[];
+      document.querySelectorAll('[id^=rp-chk-]').forEach(function(el){
+        if(el.checked) sel.push(el.value.trim().toUpperCase());
+      });
+      return sel.join(',');
+    }
+  }).then(function(r){
+    if(!r.isConfirmed) return;
+    p.procesos=r.value;
+    rh_idsModificados.add(id);
+    rh_renderizar();
+  });
+}
+
+function rh_cambiarFoto(id){
+  var p=rh_datos.find(function(x){return String(x.id)===String(id);});
+  var urlActual=(p&&p.foto&&p.foto.trim()&&p.foto!=='undefined')?p.foto:'';
+  var fallback='https://ui-avatars.com/api/?name=Foto&background=e0e7ff&color=3730a3&size=100';
+  Swal.fire({
+    title:'Cambiar Foto',
+    html:'<div style="text-align:center;padding:8px">'
+      +'<img id="sw-foto-prev" src="'+(urlActual||fallback)+'" style="width:90px;height:90px;border-radius:50%;object-fit:cover;border:3px solid #e2e8f0;margin-bottom:12px;display:block;margin-left:auto;margin-right:auto">'
+      +'<input id="sw-foto-url" class="swal2-input" placeholder="https://i.postimg.cc/..." value="'+urlActual+'">'
+      +'<div style="font-size:.75rem;color:#64748b;margin-top:6px">Pega la URL directa de la imagen (postimg, drive, imgur...)</div>'
+      +'</div>',
+    didOpen:function(){
+      var inp=document.getElementById('sw-foto-url');
+      var prev=document.getElementById('sw-foto-prev');
+      if(inp&&prev){
+        inp.addEventListener('input',function(){
+          prev.src=this.value.trim()||fallback;
+        });
+      }
+    },
+    showCancelButton:true,confirmButtonText:'Guardar',cancelButtonText:'Cancelar',
+    confirmButtonColor:'var(--rh-color)',
+    preConfirm:function(){
+      return document.getElementById('sw-foto-url').value.trim();
+    }
+  }).then(function(r){
+    if(!r.isConfirmed) return;
+    var url=r.value;
+    var img=document.getElementById('foto-img-'+id);
+    if(img) img.src=url||fallback;
+    var p2=rh_datos.find(function(x){return String(x.id)===String(id);});
+    if(p2){ p2.foto=url; rh_idsModificados.add(id); rh_actualizarBoton(); }
+  });
+}
+function rh_subirFoto(id,input){ /* no utilizado */ }
+function rh_marcarCambio(id,campo,valor){
+  var p=rh_datos.find(function(x){return String(x.id)===String(id);});
+  if(p){
+    p[campo]=valor;
+    rh_idsModificados.add(id);
+    if(!rh_camposModificados[id]) rh_camposModificados[id]=new Set();
+    rh_camposModificados[id].add(campo);
+    // Mover al frente del orden (si no estaba ya)
+    rh_ordenModificados=rh_ordenModificados.filter(function(x){return x!==id;});
+    rh_ordenModificados.unshift(id);
+    rh_renderizar();
+  }
+}
+function rh_cambioEstado(id,nuevo){
+  if(nuevo==='BAJA'){
+    var p=rh_datos.find(function(x){return String(x.id)===String(id);});
+    var nombre=(p&&p.nombre)||'este trabajador';
+    var puesto=(p&&p.puesto)||'Sin puesto';
+    Swal.fire({
+      icon:'warning',
+      title:'⚠️ Confirmar Baja',
+      html:'<div style="font-size:.95rem">¿Dar de baja a <b>'+nombre+'</b>?<br><span style="color:#64748b;font-size:.85rem">Se generará una vacante de <b>'+puesto+'</b> automáticamente.</span></div>',
+      showCancelButton:true,
+      confirmButtonText:'Sí, dar de baja',
+      cancelButtonText:'Cancelar',
+      confirmButtonColor:'#dc2626',
+      cancelButtonColor:'#64748b'
+    }).then(function(r){
+      if(!r.isConfirmed)return;
+      // Actualizar localmente
+      if(p){ p.estado='BAJA'; }
+      // Guardar de inmediato solo este empleado
+      showLoader('Dando baja a '+nombre+'...');
+      setTimeout(function(){
+        document.getElementById('g-loader-txt').innerText='Generando vacante de '+puesto+'...';
+      },1200);
+      google.script.run
+        .withSuccessHandler(function(){
+          hideLoader();
+          rhAlert('success','Baja registrada','La baja de '+nombre+' fue procesada y se generó la vacante de '+puesto+'.',2500);
+          loadPlantilla();
+        })
+        .withFailureHandler(function(e){
+          hideLoader();
+          rhAlert('error','Error al procesar baja',''+e);
+        })
+        .guardarLoteOperadores([p]);
+    });
+    return; // salir sin pasar por rh_marcarCambio
+  }
+  rh_marcarCambio(id,'estado',nuevo);
+}
+function rh_deshacer(id){
+  var orig=rh_originales.find(function(x){return String(x.id)===String(id);});
+  if(orig){
+    var idx=rh_datos.findIndex(function(x){return String(x.id)===String(id);});
+    rh_datos[idx]=JSON.parse(JSON.stringify(orig));
+    rh_idsModificados.delete(id);
+  } else {
+    rh_datos=rh_datos.filter(function(x){return String(x.id)!==String(id);});
+    rh_idsModificados.delete(id);
+  }
+  delete rh_camposModificados[id];
+  rh_ordenModificados=rh_ordenModificados.filter(function(x){return x!==id;});
+  rh_renderizar();
+}
+function rh_deshacerTodo(){
+  Swal.fire({
+    icon:'warning',
+    title:'¿Deshacer todos los cambios?',
+    text:'Se revertirán todos los campos modificados sin guardar.',
+    showCancelButton:true,
+    confirmButtonText:'Sí, deshacer todo',
+    cancelButtonText:'Cancelar',
+    confirmButtonColor:'#64748b'
+  }).then(function(r){
+    if(!r.isConfirmed) return;
+    rh_idsModificados.forEach(function(id){
+      var orig=rh_originales.find(function(x){return String(x.id)===String(id);});
+      if(orig){
+        var idx=rh_datos.findIndex(function(x){return String(x.id)===String(id);});
+        if(idx>-1) rh_datos[idx]=JSON.parse(JSON.stringify(orig));
+      }
+    });
+    rh_idsModificados=new Set();
+    rh_camposModificados={};
+    rh_ordenModificados=[];
+    rh_renderizar();
+  });
+}
+function rh_actualizarBoton(){
+  var c = rh_idsModificados.size;
+  var btn = document.getElementById('rh-btnGuardar');
+  var btnU = document.getElementById('rh-btnDeshacerTodo');
+  if(!btn) return;
+  document.getElementById('rh-countCambios').innerText = c;
+  btn.style.display  = c > 0 ? 'flex' : 'none';
+  if(btnU) btnU.style.display = c > 0 ? 'flex' : 'none';
+}
+function rh_guardarTodo(){
+  var lote=Array.from(rh_idsModificados).map(function(id){return rh_datos.find(function(x){return String(x.id)===String(id);});}).filter(Boolean);
+  if(!lote.length)return;
+  toggleSaving(true,'Guardando plantilla...');
+  google.script.run
+    .withSuccessHandler(function(res){toggleSaving(false);rhAlert('success','Guardado',res,1800);loadPlantilla();})
+    .withFailureHandler(function(e){toggleSaving(false);Swal.fire('Error',''+e,'error');})
+    .guardarLoteOperadores(lote);
+}
+function rh_nuevoEmpleado(){
+  Swal.fire({title:'Nuevo Empleado',html:'<div class="text-start">'
+    +'<label class="form-label small fw-bold">Nombre completo *</label>'
+    +'<input id="rh-sw-nombre" class="form-control mb-2">'
+    +'<label class="form-label small fw-bold">Clave *</label>'
+    +'<input id="rh-sw-clave" class="form-control mb-2">'
+    +'<label class="form-label small fw-bold">Área *</label>'
+    +'<select id="rh-sw-area" class="form-control mb-2"><option value="">Seleccionar...</option>'
+    +Object.keys(rh_catalogoAreas).map(function(a){return '<option value="'+a+'">'+a+'</option>';}).join('')
+    +'</select>'
+    +'<label class="form-label small fw-bold">Fecha de Ingreso *</label>'
+    +'<input type="date" id="rh-sw-ingreso" class="form-control">'
+    +'</div>',
+    showCancelButton:true,confirmButtonText:'Guardar',confirmButtonColor:'var(--rh-color)',
+    preConfirm:function(){
+      var n=document.getElementById('rh-sw-nombre').value.trim().toUpperCase();
+      var c=document.getElementById('rh-sw-clave').value.trim();
+      var a=document.getElementById('rh-sw-area').value;
+      var i=document.getElementById('rh-sw-ingreso').value;
+      if(!n||!c||!a||!i){Swal.showValidationMessage('Completa todos los campos');return false;}
+      return {nombre:n,clave:c,area:a,ingreso:i,estado:'ACTIVO',puesto:'',foto:'',fiscal:0,integrado:0};
+    }
+  }).then(function(r){
+    if(!r.isConfirmed)return;
+    toggleSaving(true,'Guardando...');
+    google.script.run
+      .withSuccessHandler(function(res){toggleSaving(false);rhToast('success','✅ Empleado creado correctamente');loadPlantilla();})
+      .withFailureHandler(function(e){toggleSaving(false);Swal.fire('Error',''+e,'error');})
+      .guardarOperador(r.value);
+  });
+}
+async function rh_exportarExcel(){
+  if(window._exportando) return;
+  window._exportando = true;
+  toggleSaving(true, 'Exportando Excel profesional...');
+  try {
+    var activos = rh_datos.filter(function(p){
+      return p.estado === 'ACTIVO' || p.estado === 'INCAPACIDAD';
+    });
+
+    var workbook = new ExcelJS.Workbook();
+    workbook.creator = 'TOOL CN — Recursos Humanos';
+    workbook.created = new Date();
+
+    var ws = workbook.addWorksheet('Plantilla Activa', {
+      pageSetup: { paperSize: 9, orientation: 'landscape', fitToPage: true, fitToWidth: 1 },
+      views: [{ state: 'frozen', ySplit: 4 }]
+    });
+
+    // ── Paleta de colores corporativa ──
+    var COLOR_DARK   = '0F172A';  // azul marino oscuro
+    var COLOR_HEADER = '4F46E5';  // morado RH
+    var COLOR_SUB    = '1E1B4B';  // morado muy oscuro
+    var COLOR_ACTIVO = 'D1FAE5';  // verde claro
+    var COLOR_INCAP  = 'FEF3C7';  // amarillo claro
+    var COLOR_ALT    = 'F0F4FF';  // azul muy claro para filas alternas
+    var COLOR_WHITE  = 'FFFFFF';
+    var COLOR_BORDER = 'C7D2FE';  // borde morado claro
+
+    // Número de columnas
+    var numCols = 9;
+
+    // ── FILA 1: Título principal ──
+    ws.mergeCells(1, 1, 1, numCols);
+    var titleCell = ws.getCell('A1');
+    titleCell.value = 'TOOL CN — RECURSOS HUMANOS';
+    titleCell.font = { name: 'Calibri', size: 16, bold: true, color: { argb: COLOR_WHITE } };
+    titleCell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: COLOR_DARK } };
+    titleCell.alignment = { vertical: 'middle', horizontal: 'center' };
+    ws.getRow(1).height = 36;
+
+    // ── FILA 2: Subtítulo ──
+    ws.mergeCells(2, 1, 2, numCols);
+    var subCell = ws.getCell('A2');
+    subCell.value = 'PLANTILLA ACTIVA — ' + new Date().toLocaleDateString('es-MX', { year:'numeric', month:'long', day:'numeric' }).toUpperCase();
+    subCell.font = { name: 'Calibri', size: 11, bold: true, color: { argb: 'C7D2FE' } };
+    subCell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: COLOR_SUB } };
+    subCell.alignment = { vertical: 'middle', horizontal: 'center' };
+    ws.getRow(2).height = 24;
+
+    // ── FILA 3: Resumen rápido ──
+    ws.mergeCells(3, 1, 3, numCols);
+    var totalActivos  = activos.filter(function(p){ return p.estado==='ACTIVO'; }).length;
+    var totalIncap    = activos.filter(function(p){ return p.estado==='INCAPACIDAD'; }).length;
+    var resCell = ws.getCell('A3');
+    resCell.value = 'Total empleados: ' + activos.length + '   |   Activos: ' + totalActivos + '   |   Incapacidad: ' + totalIncap;
+    resCell.font = { name: 'Calibri', size: 10, italic: true, color: { argb: '64748B' } };
+    resCell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'F8FAFC' } };
+    resCell.alignment = { vertical: 'middle', horizontal: 'center' };
+    ws.getRow(3).height = 20;
+
+    // ── FILA 4: Encabezados de columna ──
+    var headers = ['#','NOMBRE COMPLETO','CLAVE','ÁREA','PUESTO','ESTADO','SAL. FISCAL','SAL. INTEGRADO','F. INGRESO'];
+    var headerRow = ws.getRow(4);
+    headers.forEach(function(h, i){
+      var cell = headerRow.getCell(i + 1);
+      cell.value = h;
+      cell.font = { name: 'Calibri', size: 10, bold: true, color: { argb: COLOR_WHITE } };
+      cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: COLOR_HEADER } };
+      cell.alignment = { vertical: 'middle', horizontal: 'center', wrapText: true };
+      cell.border = {
+        top:    { style: 'thin', color: { argb: COLOR_BORDER } },
+        bottom: { style: 'medium', color: { argb: COLOR_WHITE } },
+        left:   { style: 'thin', color: { argb: COLOR_BORDER } },
+        right:  { style: 'thin', color: { argb: COLOR_BORDER } }
+      };
+    });
+    headerRow.height = 30;
+
+    // ── Anchos de columna ──
+    ws.columns = [
+      { width: 6  },  // #
+      { width: 32 },  // NOMBRE
+      { width: 10 },  // CLAVE
+      { width: 22 },  // ÁREA
+      { width: 24 },  // PUESTO
+      { width: 14 },  // ESTADO
+      { width: 14 },  // SAL. FISCAL
+      { width: 16 },  // SAL. INTEGRADO
+      { width: 14 },  // F. INGRESO
+    ];
+
+    // ── FILAS DE DATOS ──
+    activos.forEach(function(p, idx){
+      var rowNum = idx + 5;
+      var row = ws.getRow(rowNum);
+      var isAlt = idx % 2 === 0;
+
+      var bgColor = isAlt ? COLOR_ALT : COLOR_WHITE;
+      if(p.estado === 'INCAPACIDAD') bgColor = COLOR_INCAP;
+
+      var values = [
+        idx + 1,
+        (p.nombre || '').toUpperCase(),
+        p.clave || '',
+        (p.area || '').toUpperCase(),
+        (p.puesto || '').toUpperCase(),
+        p.estado || '',
+        parseFloat(p.fiscal) || 0,
+        parseFloat(p.integrado) || 0,
+        (function(v){
+          if(!v) return '';
+          var s = String(v).trim();
+          // Formato yyyy-mm-dd → dd/mm/yyyy
+          if(/^\d{4}-\d{2}-\d{2}$/.test(s)){
+            var p = s.split('-');
+            return p[2]+'/'+p[1]+'/'+p[0];
+          }
+          return s;
+        })(p.ingreso)
+      ];
+
+      values.forEach(function(val, ci){
+        var cell = row.getCell(ci + 1);
+        cell.value = val;
+        cell.font = { name: 'Calibri', size: 9.5 };
+        cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: bgColor } };
+        cell.border = {
+          top:    { style: 'thin', color: { argb: 'E2E8F0' } },
+          bottom: { style: 'thin', color: { argb: 'E2E8F0' } },
+          left:   { style: 'thin', color: { argb: 'E2E8F0' } },
+          right:  { style: 'thin', color: { argb: 'E2E8F0' } }
+        };
+
+        // Alineación por columna
+        if(ci === 0) cell.alignment = { horizontal: 'center', vertical: 'middle' };
+        else if(ci === 1) cell.alignment = { horizontal: 'left', vertical: 'middle' };
+        else if(ci === 5){ // ESTADO — con color de texto
+          cell.alignment = { horizontal: 'center', vertical: 'middle' };
+          cell.font = { name: 'Calibri', size: 9.5, bold: true,
+            color: { argb: p.estado === 'INCAPACIDAD' ? 'B45309' : '15803D' } };
+        }
+        else if(ci === 6 || ci === 7){ // Salarios
+          cell.alignment = { horizontal: 'right', vertical: 'middle' };
+          cell.numFmt = '"$"#,##0.00';
+        }
+        else cell.alignment = { horizontal: 'center', vertical: 'middle' };
+      });
+
+      row.height = 18;
+    });
+
+    // ── FILA FINAL: total de registros ──
+    var lastRow = ws.addRow(['', 'TOTAL DE EMPLEADOS: ' + activos.length, '', '', '', '', '', '', '']);
+    lastRow.height = 22;
+    lastRow.getCell(2).font = { name: 'Calibri', size: 10, bold: true, color: { argb: COLOR_HEADER } };
+    lastRow.getCell(2).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'EEF2FF' } };
+    for(var c = 1; c <= numCols; c++){
+      lastRow.getCell(c).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'EEF2FF' } };
+      lastRow.getCell(c).border = {
+        top: { style: 'medium', color: { argb: COLOR_HEADER } }
+      };
+    }
+
+    // ── Generar y descargar ──
+    var fecha = new Date().toLocaleDateString('es-MX').replace(/\//g, '-');
+    var buffer = await workbook.xlsx.writeBuffer();
+    var blob = new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+    var url = URL.createObjectURL(blob);
+    var a = document.createElement('a');
+    a.href = url;
+    a.download = 'Plantilla_Activa_' + fecha + '.xlsx';
+    a.click();
+    URL.revokeObjectURL(url);
+
+    rhToast('success', '✅ Excel exportado correctamente');
+
+  } catch(e){
+    rhAlert('error', 'Error al exportar', '' + e);
+  }
+  window._exportando = false;
+  toggleSaving(false);
+}
+
+// ══════════════════════════════════════════════════════════
+//  MÓDULO: BAJAS DE PERSONAL
+// ══════════════════════════════════════════════════════════
