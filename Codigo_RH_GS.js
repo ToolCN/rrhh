@@ -9,7 +9,7 @@ var ID_HOJA_RH     = "1maI-y2eV6ZxQoV4frYT6eRkynstQErVbYWvmHz7sDUk"; // Libro Re
 // ─── PUNTO DE ENTRADA ────────────────────────────────────────────────────────────
 function doGet(e) {
   return HtmlService.createHtmlOutputFromFile('MainApp_RecursosHumanosHTML')
-    .setTitle('TOOL CN | Recursos Humanos')
+    .setTitle('Recursos Humanos')
     .setXFrameOptionsMode(HtmlService.XFrameOptionsMode.ALLOWALL);
 }
 
