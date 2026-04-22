@@ -1,43 +1,98 @@
+// ─── Estado de navegación de mes ───────────────────────────────────────
+var _actasMesOffset = 0; // 0 = mes actual, -1 = mes anterior, etc.
+
 function loadConsultaActas(){
-  showLoader('Cargando actas...');
-  google.script.run
-    .withSuccessHandler(function(actas){hideLoader();renderConsultaActas(actas||[]);})
-    .withFailureHandler(function(e){hideLoader();Swal.fire('Error',''+e,'error');})
-    .obtenerTodasLasActas({});
+  _actasMesOffset = 0;
+  _cargarActasMes();
 }
 
-function renderConsultaActas(actas){
-  var total=actas.length, activas=0, canceladas=0;
-  actas.forEach(function(a){if((a.estatus||'').toUpperCase()==='ACTIVA')activas++;else canceladas++;});
+function _cargarActasMes(){
+  showLoader('Cargando actas...');
+  var hoy = new Date();
+  var mes  = hoy.getMonth() + 1 + _actasMesOffset;
+  var anio = hoy.getFullYear();
+  // Ajustar si mes sale del rango 1-12
+  while(mes > 12){ mes -= 12; anio++; }
+  while(mes < 1) { mes += 12; anio--; }
+  google.script.run
+    .withSuccessHandler(function(actas){ hideLoader(); renderConsultaActas(actas||[], mes, anio); })
+    .withFailureHandler(function(e){ hideLoader(); Swal.fire('Error',''+e,'error'); })
+    .obtenerTodasLasActas({ mes: mes, anio: anio });
+}
+
+function renderConsultaActas(actas, mes, anio){
+  var MESES = ['Enero','Febrero','Marzo','Abril','Mayo','Junio',
+               'Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre'];
+  var labelMes = MESES[(mes||1)-1] + ' ' + (anio||new Date().getFullYear());
+  var total=actas.length, activas=0, canceladas=0, conDoc=0;
+  actas.forEach(function(a){
+    if((a.estatus||'').toUpperCase()==='ACTIVA') activas++; else canceladas++;
+    if(a.url) conDoc++;
+  });
+
+  var esActual = _actasMesOffset === 0;
+
   var html=
     '<div class="card-pro mb-3">'
-    +'<div class="d-flex justify-content-between align-items-center mb-4">'
+    // ── Cabecera ──
+    +'<div class="d-flex justify-content-between align-items-center mb-3">'
     +'<div class="d-flex align-items-center gap-3">'
     +'<div style="width:48px;height:48px;border-radius:12px;background:#dc262620;display:flex;align-items:center;justify-content:center">'
-    +'<i class="fas fa-search" style="color:#dc2626;font-size:1.4rem"></i></div>'
-    +'<div><h5 class="fw-bold m-0">Consulta de Actas</h5><p class="text-muted small m-0">Historial completo de actas administrativas</p></div></div>'
-    +'<button class="btn fw-bold rounded-pill px-4" style="background:#dc2626;color:white" onclick="loadActas()"><i class="fas fa-plus me-2"></i>Nueva Acta</button>'
+    +'<i class="fas fa-file-alt" style="color:#dc2626;font-size:1.4rem"></i></div>'
+    +'<div><h5 class="fw-bold m-0">Consulta de Actas</h5>'
+    +'<p class="text-muted small m-0">Actas administrativas registradas</p></div></div>'
+    // Navegación de mes (esquina derecha)
+    +'<div style="display:flex;align-items:center;gap:6px">'
+    +'<button onclick="_actasMesOffset--;_cargarActasMes()" class="btn btn-sm" '
+    +'style="background:#f1f5f9;border:1px solid #e2e8f0;border-radius:8px;padding:4px 10px;font-size:.85rem" title="Mes anterior">'
+    +'<i class="fas fa-chevron-left"></i></button>'
+    +'<div style="min-width:160px;text-align:center;font-weight:700;font-size:.9rem;color:#1a237e;background:#eff6ff;'
+    +'border:1px solid #bfdbfe;border-radius:8px;padding:5px 14px">'
+    +'<i class="fas fa-calendar-alt me-1" style="color:#3b82f6"></i>'+labelMes+'</div>'
+    +'<button onclick="_actasMesOffset++;_cargarActasMes()" class="btn btn-sm" '
+    +'style="background:#f1f5f9;border:1px solid #e2e8f0;border-radius:8px;padding:4px 10px;font-size:.85rem"'
+    +(esActual?' disabled title="Es el mes actual"':' title="Mes siguiente"')+'>'
+    +'<i class="fas fa-chevron-right"></i></button>'
+    +'<button class="btn fw-bold rounded-pill px-3" style="background:#dc2626;color:white;font-size:.82rem" onclick="loadActas()">'
+    +'<i class="fas fa-plus me-1"></i>Nueva Acta</button>'
+    +'</div></div>'
+    // ── Stats ──
+    +'<div class="row g-3 mb-3">'
+    +_sc('Total del Mes',total,'#1a237e','fa-file-alt')
+    +_sc('Activas',activas,'#dc2626','fa-exclamation-circle')
+    +_sc('Con Documento',conDoc,'#16a34a','fa-paperclip')
     +'</div>'
-    +'<div class="row g-3 mb-4">'
-    +_sc('Total de Actas',total,'#1a237e','fa-file-alt')
-    +_sc('Actas Activas',activas,'#dc2626','fa-exclamation-circle')
-    +_sc('Canceladas',canceladas,'#64748b','fa-times-circle')
-    +'</div>'
+    // ── Filtros ──
     +'<div class="row g-2 mb-3">'
     +'<div class="col-md-4"><input id="fi-emp" class="form-control form-control-sm" placeholder="🔍 Buscar empleado..." oninput="filtrarActas()"></div>'
     +'<div class="col-md-3"><select id="fi-tipo" class="form-select form-select-sm" onchange="filtrarActas()"><option value="">Todos los tipos</option>'
     +TIPOS_FALTA.map(function(t){return '<option>'+t+'</option>';}).join('')+'</select></div>'
     +'<div class="col-md-3"><select id="fi-est" class="form-select form-select-sm" onchange="filtrarActas()"><option value="">Todos los estatus</option><option>ACTIVA</option><option>CANCELADA</option></select></div>'
     +'</div>'
+    // ── Tabla ──
     +'<div class="table-responsive"><table class="table table-hover align-middle">'
-    +'<thead class="table-light"><tr><th>Folio</th><th>Fecha</th><th>Empleado</th><th>Área</th><th>Tipo de Falta</th><th>Sanción</th><th>Estatus</th><th>Acciones</th></tr></thead>'
+    +'<thead class="table-light"><tr>'
+    +'<th>Folio</th><th>Fecha</th><th>Empleado</th><th>Área</th>'
+    +'<th>Tipo de Falta</th><th>Sanción</th><th>Estatus</th>'
+    +'<th style="text-align:center">Doc.</th><th>Acciones</th>'
+    +'</tr></thead>'
     +'<tbody id="tbody-actas">'
-    +(actas.length===0?'<tr><td colspan="8" class="text-center text-muted py-5">No hay actas registradas</td></tr>'
+    +(actas.length===0
+      ?'<tr><td colspan="9" class="text-center text-muted py-5"><i class="fas fa-inbox fa-2x mb-2 d-block" style="opacity:.3"></i>No hay actas en '+labelMes+'</td></tr>'
       :(_rhSet('actas',actas),actas.map(function(a,aidx){return _rowActa(a,aidx);})).join(''))
-    +'</tbody></table></div></div>';
-  setTimeout(_actasBindEvents,0);
+    +'</tbody></table></div>'
+    // CSS animaciones clip
+    +'<style>'
+    +'@keyframes clipPulseRed{0%,100%{transform:scale(1);opacity:1}50%{transform:scale(1.3);opacity:.5;color:#dc2626}}'
+    +'@keyframes clipPulseGreen{0%,100%{transform:scale(1)}50%{transform:scale(1.15)}}'
+    +'.clip-sin-doc{animation:clipPulseRed 1s infinite;color:#dc2626;cursor:pointer}'
+    +'.clip-con-doc{animation:clipPulseGreen 2s infinite;color:#16a34a;cursor:pointer}'
+    +'</style>'
+    +'</div>';
+
   document.getElementById('content-area').innerHTML=html;
   window._actasCache=actas;
+  setTimeout(_actasBindEvents,0);
 }
 
 function _sc(label,val,color,icon){
@@ -53,6 +108,23 @@ function _rowActa(a,aidx){
     ?'<span class="badge" style="background:#fee2e2;color:#b91c1c">Activa</span>'
     :'<span class="badge" style="background:#f1f5f9;color:#64748b">Cancelada</span>';
   var activa=(a.estatus||'').toUpperCase()==='ACTIVA';
+  var tieneUrl = !!(a.url && a.url.trim());
+
+  // Botón clip
+  var clipBtn;
+  if(tieneUrl){
+    clipBtn = '<button class="btn btn-sm" data-accion="acta-clip" data-idx="'+aidx+'" '
+      +'title="Abrir documento. Doble clic para reemplazar" '
+      +'style="background:none;border:none;font-size:1.1rem;padding:2px 6px" '
+      +'ondblclick="acta_subirPdf(\''+aidx+'\')">'
+      +'<i class="fas fa-paperclip clip-con-doc"></i></button>';
+  } else {
+    clipBtn = '<button class="btn btn-sm" data-accion="acta-subir-pdf" data-idx="'+aidx+'" '
+      +'title="Subir PDF escaneado" '
+      +'style="background:none;border:none;font-size:1.1rem;padding:2px 6px">'
+      +'<i class="fas fa-paperclip clip-sin-doc"></i></button>';
+  }
+
   return '<tr data-emp="'+(a.empleado||'').toUpperCase()+'" data-tipo="'+(a.tipoFalta||'').toUpperCase()+'" data-est="'+(a.estatus||'').toUpperCase()+'">'
     +'<td><span class="fw-bold" style="color:#1a237e;font-size:.8rem">'+a.folio+'</span></td>'
     +'<td class="small">'+_fmtFecha(a.fecha)+'</td>'
@@ -61,27 +133,91 @@ function _rowActa(a,aidx){
     +'<td class="small">'+a.tipoFalta+'</td>'
     +'<td class="small">'+a.sancion+'</td>'
     +'<td>'+badge+'</td>'
+    +'<td style="text-align:center">'+clipBtn+'</td>'
     +'<td><div class="d-flex gap-1">'
     +'<button class="btn btn-sm btn-outline-primary rounded-pill" style="font-size:.7rem" data-accion="acta-ver" data-idx="'+aidx+'"><i class="fas fa-eye me-1"></i>Ver</button>'
     +(activa?'<button class="btn btn-sm btn-outline-warning rounded-pill" style="font-size:.7rem" data-accion="acta-editar" data-idx="'+aidx+'"><i class="fas fa-edit me-1"></i>Editar</button>':'')
     +(activa?'<button class="btn btn-sm btn-outline-secondary rounded-pill" style="font-size:.7rem" data-accion="acta-cancelar" data-folio="'+a.folio+'"><i class="fas fa-ban me-1"></i>Cancelar</button>':'')
     +'</div></td></tr>';
 }
-// Delegado de eventos para tabla de actas
+
 function _actasBindEvents(){
   var area=document.getElementById('content-area');
-  if(!area) return;
+  if(!area||area._actasBound) return;
+  area._actasBound=true;
   area.addEventListener('click',function(ev){
     var btn=ev.target.closest('[data-accion]');
     if(!btn) return;
     var ac=btn.getAttribute('data-accion');
     var idx=parseInt(btn.getAttribute('data-idx')||'0',10);
-    if(ac==='acta-ver')     acta_verDetalle(_rhGet('actas',idx));
-    else if(ac==='acta-editar')   acta_editarModal(_rhGet('actas',idx));
-    else if(ac==='acta-cancelar') acta_cancelar(btn.getAttribute('data-folio'));
-  },{once:true});
+    var a=_rhGet('actas',idx);
+    if(ac==='acta-ver')          acta_verDetalle(a);
+    else if(ac==='acta-editar')  acta_editarModal(a);
+    else if(ac==='acta-cancelar')acta_cancelar(btn.getAttribute('data-folio'));
+    else if(ac==='acta-clip')    window.open(a.url,'_blank');
+    else if(ac==='acta-subir-pdf') acta_subirPdf(idx);
+  });
 }
 
+function acta_subirPdf(idx){
+  var a = _rhGet('actas', idx);
+  if(!a) return;
+  var tieneUrl = !!(a.url && a.url.trim());
+
+  var input = document.createElement('input');
+  input.type = 'file';
+  input.accept = 'application/pdf';
+  input.onchange = function(){
+    var file = input.files[0];
+    if(!file) return;
+    var reader = new FileReader();
+    reader.onload = function(e){
+      var base64 = e.target.result.split(',')[1];
+      toggleSaving(true, 'Subiendo PDF a Drive...');
+      google.script.run
+        .withSuccessHandler(function(url){
+          toggleSaving(false);
+          if(!url || url.indexOf('http')<0){
+            Swal.fire('Error','No se pudo obtener el enlace del archivo.','error'); return;
+          }
+          // Actualizar cache local
+          a.url = url;
+          _rhGet('actas',idx).url = url;
+          // Actualizar celda visualmente
+          var btn = document.querySelector('[data-accion="acta-subir-pdf"][data-idx="'+idx+'"]')
+                 || document.querySelector('[data-accion="acta-clip"][data-idx="'+idx+'"]');
+          if(btn){
+            btn.setAttribute('data-accion','acta-clip');
+            btn.title='Abrir documento. Doble clic para reemplazar';
+            btn.innerHTML='<i class="fas fa-paperclip clip-con-doc"></i>';
+            btn.ondblclick=function(){ acta_subirPdf(idx); };
+          }
+          rhToast('success','✅ PDF subido correctamente');
+        })
+        .withFailureHandler(function(err){
+          toggleSaving(false);
+          Swal.fire('Error al subir',''+err,'error');
+        })
+        .subirPdfActa({ folio: a.folio, nombre: file.name, base64: base64 });
+    };
+    reader.readAsDataURL(file);
+  };
+
+  if(tieneUrl){
+    // Ya tiene documento: confirmar reemplazo
+    Swal.fire({
+      icon:'question',
+      title:'Reemplazar documento',
+      html:'Ya existe un PDF para el acta <b>'+a.folio+'</b>.<br>¿Deseas subir uno nuevo que reemplazará al actual?',
+      showCancelButton:true,
+      confirmButtonText:'<i class="fas fa-upload me-1"></i>Sí, reemplazar',
+      cancelButtonText:'Cancelar',
+      confirmButtonColor:'#dc2626'
+    }).then(function(r){ if(r.isConfirmed) input.click(); });
+  } else {
+    input.click();
+  }
+}
 
 function filtrarActas(){
   var emp =(document.getElementById('fi-emp').value ||'').toUpperCase().trim();

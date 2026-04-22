@@ -8,21 +8,18 @@ function loadPlantilla(){
       rh_catalogoAreas=res.catalogoAreas||{};
       rh_catalogoProcesos=res.catalogoProcesos||[];
       rh_idsModificados=new Set();
-      var areasOpts='<option value="">Todas las áreas</option>';
-      Object.keys(rh_catalogoAreas).sort().forEach(function(a){areasOpts+='<option value="'+a+'">'+a+'</option>';});
+      // Inicializar filtros multi-selección
+      rh_filtroAreas = new Set();
+      rh_filtroEstados = new Set();
       document.getElementById('content-area').innerHTML=
         '<div class="card-pro">'
         +'<div class="d-flex flex-wrap gap-2 align-items-center mb-3">'
-        +'<select id="rh-filtroArea" class="form-select form-select-sm" style="max-width:180px" onchange="rh_renderizar()">'+areasOpts+'</select>'
-        +'<select id="rh-filtroEstado" class="form-select form-select-sm" style="max-width:160px" onchange="rh_renderizar()">'
-        +'<option value="">Todos los estados</option>'
-        +'<option value="ACTIVO">ACTIVO</option><option value="INCAPACIDAD">INCAPACIDAD</option><option value="BAJA">BAJA</option>'
-        +'</select>'
+        +'<button id="rh-btnFiltroArea" class="btn btn-sm rounded-pill px-3 fw-bold" style="background:#e0e7ff;color:#3730a3;border:1.5px solid #c7d2fe" onclick="rh_abrirFiltroAreas()"><i class="fas fa-building me-1"></i>Todas las áreas <span id="rh-areaCount"></span></button>'
+        +'<button id="rh-btnFiltroEstado" class="btn btn-sm rounded-pill px-3 fw-bold" style="background:#f1f5f9;color:#475569;border:1.5px solid #cbd5e1" onclick="rh_abrirFiltroEstados()"><i class="fas fa-circle-dot me-1"></i>Todos los estados <span id="rh-estadoCount"></span></button>'
         +'<input id="rh-buscar" class="form-control form-control-sm" style="max-width:200px" placeholder="🔍 Buscar nombre..." oninput="rh_renderizar()">'
         +'<div class="ms-auto d-flex gap-2">'
         +'<button class="btn btn-sm fw-bold rounded-pill px-3" style="background:#16a34a;color:white" onclick="rh_exportarExcel()"><i class="fas fa-file-excel me-1"></i>Excel</button>'
         +'<button class="btn btn-sm fw-bold rounded-pill px-3" style="background:#7c3aed;color:white" onclick="rh_abrirModificarSalarios()"><i class="fas fa-dollar-sign me-1"></i>Modificar Salarios</button>'
-        +''
         +'</div></div>'
         +'<div id="rh-grid"></div>'
         +'</div>';
@@ -32,14 +29,36 @@ function loadPlantilla(){
     .obtenerDatosRH();
 }
 function rh_renderizar(){
-  var fArea=document.getElementById('rh-filtroArea').value;
-  var fEst=document.getElementById('rh-filtroEstado').value;
   var fBus=(document.getElementById('rh-buscar').value||'').toLowerCase();
   var filtrados=rh_datos.filter(function(p){
     var _esActivo=p.estado==='ACTIVO'||p.estado==='INCAPACIDAD';
-    return _esActivo&&(!fArea||p.area===fArea)&&(!fEst||p.estado===fEst)
-           &&(!fBus||p.nombre.toLowerCase().includes(fBus));
+    var areaOk=(!rh_filtroAreas||rh_filtroAreas.size===0)||rh_filtroAreas.has(p.area);
+    var estOk=(!rh_filtroEstados||rh_filtroEstados.size===0)||rh_filtroEstados.has(p.estado);
+    return _esActivo&&areaOk&&estOk&&(!fBus||p.nombre.toLowerCase().includes(fBus));
   });
+  // Actualizar labels de botones de filtro
+  var btnA=document.getElementById('rh-btnFiltroArea');
+  var cntA=document.getElementById('rh-areaCount');
+  if(btnA){
+    if(rh_filtroAreas&&rh_filtroAreas.size>0){
+      btnA.style.background='#4f46e5';btnA.style.color='white';btnA.style.borderColor='#4f46e5';
+      if(cntA) cntA.innerHTML=' <span style="background:white;color:#4f46e5;border-radius:20px;padding:0 6px;font-size:.7rem">'+rh_filtroAreas.size+'</span>';
+    } else {
+      btnA.style.background='#e0e7ff';btnA.style.color='#3730a3';btnA.style.borderColor='#c7d2fe';
+      if(cntA) cntA.innerHTML='';
+    }
+  }
+  var btnE=document.getElementById('rh-btnFiltroEstado');
+  var cntE=document.getElementById('rh-estadoCount');
+  if(btnE){
+    if(rh_filtroEstados&&rh_filtroEstados.size>0){
+      btnE.style.background='#0369a1';btnE.style.color='white';btnE.style.borderColor='#0369a1';
+      if(cntE) cntE.innerHTML=' <span style="background:white;color:#0369a1;border-radius:20px;padding:0 6px;font-size:.7rem">'+rh_filtroEstados.size+'</span>';
+    } else {
+      btnE.style.background='#f1f5f9';btnE.style.color='#475569';btnE.style.borderColor='#cbd5e1';
+      if(cntE) cntE.innerHTML='';
+    }
+  }
   // Modificados al frente respetando el orden en que se editaron
   filtrados.sort(function(a,b){
     var ia=rh_ordenModificados.indexOf(a.id);
@@ -62,23 +81,45 @@ function rh_renderizar(){
       :'https://ui-avatars.com/api/?name='+encodeURIComponent(p.nombre||'?')+'&background=e0e7ff&color=3730a3&size=80';
     var estadoColor={'ACTIVO':'#16a34a','INCAPACIDAD':'#d97706','BAJA':'#dc2626'}[p.estado]||'#64748b';
     var estadoBg={'ACTIVO':'#dcfce7','INCAPACIDAD':'#fef3c7','BAJA':'#fee2e2'}[p.estado]||'#f1f5f9';
+    var estadoBorder={'ACTIVO':'#bbf7d0','INCAPACIDAD':'#fde68a','BAJA':'#fecaca'}[p.estado]||'#e2e8f0';
     var cm=function(c){return camposMod.has(c)?' campo-modificado':'';};
-    html+='<div class="rh-worker-card '+modClass+'" style="border-left:3px solid '+(modificado?'#ef4444':'#e2e8f0')+'">';
-    html+='<div style="position:relative;flex-shrink:0;width:56px;height:56px" title="Clic para cambiar foto">';
-    html+='<img id="foto-img-'+pid+'" src="'+fotoUrl+'" data-id="'+pid+'" style="width:56px;height:56px;border-radius:50%;object-fit:cover;cursor:pointer;border:2px solid #e2e8f0" onclick="rh_cambiarFoto(this.dataset.id)">';
-    html+='<div style="position:absolute;bottom:0;right:0;background:var(--rh-color);color:white;border-radius:50%;width:18px;height:18px;font-size:10px;display:flex;align-items:center;justify-content:center;pointer-events:none"><i class="fas fa-camera"></i></div>';
+    var cardBorderColor=modificado?'#ef4444':estadoBorder;
+    var cardBg=modificado?'#fff5f5':(p.estado==='INCAPACIDAD'?'#fffbeb':'#ffffff');
+    html+='<div class="rh-worker-card '+modClass+'" style="'
+      +'border:1.5px solid '+cardBorderColor+';'
+      +'border-left:4px solid '+(modificado?'#ef4444':estadoColor)+';'
+      +'background:'+cardBg+';'
+      +'border-radius:0;'
+      +'margin-bottom:0;'
+      +'margin-top:-1px;'
+      +'padding:8px 12px;'
+      +'display:flex;gap:10px;align-items:center;position:relative;'
+      +'">';
+    // — Foto + badge estado —
+    html+='<div style="flex-shrink:0;display:flex;flex-direction:column;align-items:center;gap:3px">';
+    html+='<div style="position:relative;width:46px;height:46px" title="Clic para cambiar foto">';
+    html+='<img id="foto-img-'+pid+'" src="'+fotoUrl+'" data-id="'+pid+'" '
+      +'style="width:46px;height:46px;border-radius:50%;object-fit:cover;cursor:pointer;border:2px solid '+estadoColor+'" '
+      +'onerror="this.src=\'https://ui-avatars.com/api/?name='+encodeURIComponent(p.nombre||'?')+'&background=e0e7ff&color=3730a3&size=80\'" '
+      +'onclick="rh_cambiarFoto(this.dataset.id)">';
+    html+='<div style="position:absolute;bottom:0;right:0;background:'+estadoColor+';color:white;border-radius:50%;width:14px;height:14px;font-size:8px;display:flex;align-items:center;justify-content:center;pointer-events:none"><i class="fas fa-camera"></i></div>';
+    html+='</div>';
+    html+='<span style="font-size:.55rem;font-weight:800;text-transform:uppercase;background:'+estadoBg+';color:'+estadoColor+';border-radius:20px;padding:0px 5px;border:1px solid '+estadoColor+'50;white-space:nowrap">'+p.estado+'</span>';
     html+='<input type="file" id="foto-input-'+pid+'" data-id="'+pid+'" accept="image/*" style="display:none" onchange="rh_subirFoto(this.dataset.id,this)">';
     html+='</div>';
-    html+='<div style="flex:1;min-width:0">'
-      +'<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px">'
-      +'<span style="font-size:.68rem;font-weight:800;text-transform:uppercase;letter-spacing:.07em;background:'+estadoBg+';color:'+estadoColor+';border-radius:20px;padding:2px 10px;border:1px solid '+estadoColor+'40">'+p.estado+'</span>'
-      +(modificado?'<span style="font-size:.68rem;font-weight:700;color:var(--rh-color);background:#e0e7ff;border-radius:20px;padding:2px 8px"><i class="fas fa-pen me-1"></i>Modificado</span>':'')
-      +'</div>'
-      +'<div class="d-flex gap-2 flex-wrap">';
-    html+='<div class="field-row"><span class="lbl">NOMBRE</span><input class="val-input'+cm('nombre')+'" style="min-width:200px" data-id="'+pid+'" data-campo="nombre" value="'+(p.nombre||'')+'" onchange="rh_marcarCambio(this.dataset.id,this.dataset.campo,this.value)"></div>';
-    html+='<div class="field-row"><span class="lbl">CLAVE</span><input class="val-input'+cm('clave')+'" style="min-width:80px" data-id="'+pid+'" data-campo="clave" value="'+(p.clave||'')+'" onchange="rh_marcarCambio(this.dataset.id,this.dataset.campo,this.value)"></div>';
-    html+='<div class="field-row"><span class="lbl">AREA</span><select class="val-input'+cm('area')+'" data-id="'+pid+'" data-campo="area" onchange="rh_marcarCambio(this.dataset.id,this.dataset.campo,this.value)">'+areasOpts+'</select></div>';
-    html+='<div class="field-row"><span class="lbl">PUESTO</span><input class="val-input'+cm('puesto')+'" data-id="'+pid+'" data-campo="puesto" value="'+(p.puesto||'')+'" onchange="rh_marcarCambio(this.dataset.id,this.dataset.campo,this.value)"></div>';
+    // — Cuerpo de campos todo en una fila compacta —
+    html+='<div style="flex:1;min-width:0;display:flex;flex-direction:column;gap:4px">';
+    // Fila 1: nombre + badge modificado
+    html+='<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:2px">';
+    html+='<input class="val-input'+cm('nombre')+'" style="min-width:170px;font-size:.88rem;font-weight:700;color:#0f172a" data-id="'+pid+'" data-campo="nombre" value="'+(p.nombre||'')+'" onchange="rh_marcarCambio(this.dataset.id,this.dataset.campo,this.value)">';
+    html+=(modificado?'<span style="font-size:.6rem;font-weight:700;color:#ef4444;background:#fee2e2;border-radius:20px;padding:1px 7px;white-space:nowrap"><i class="fas fa-pen me-1"></i>Modificado</span>':'');
+    html+='</div>';
+    // Fila 2: campos editables + salarios + procesos — todo en una línea
+    var areasOptsCard=Object.keys(rh_catalogoAreas).map(function(a){return '<option value="'+a+'"'+(p.area===a?' selected':'')+'>'+a+'</option>';}).join('');
+    html+='<div style="display:flex;flex-wrap:wrap;gap:4px 10px;align-items:center">';
+    html+='<div class="field-row"><span class="lbl">CLAVE</span><input class="val-input'+cm('clave')+'" style="min-width:65px;max-width:85px" data-id="'+pid+'" data-campo="clave" value="'+(p.clave||'')+'" onchange="rh_marcarCambio(this.dataset.id,this.dataset.campo,this.value)"></div>';
+    html+='<div class="field-row"><span class="lbl">ÁREA</span><select class="val-input'+cm('area')+'" data-id="'+pid+'" data-campo="area" onchange="rh_marcarCambio(this.dataset.id,this.dataset.campo,this.value)">'+areasOptsCard+'</select></div>';
+    html+='<div class="field-row"><span class="lbl">PUESTO</span><input class="val-input'+cm('puesto')+'" style="min-width:110px" data-id="'+pid+'" data-campo="puesto" value="'+(p.puesto||'')+'" onchange="rh_marcarCambio(this.dataset.id,this.dataset.campo,this.value)"></div>';
     html+='<div class="field-row"><span class="lbl">ESTADO</span>';
     html+='<select class="val-input'+cm('estado')+'" data-id="'+pid+'" onchange="rh_cambioEstado(this.dataset.id,this.value)">';
     html+='<option value="ACTIVO"'+(p.estado==='ACTIVO'?' selected':'')+'>ACTIVO</option>';
@@ -86,27 +127,112 @@ function rh_renderizar(){
     html+='<option value="BAJA"'+(p.estado==='BAJA'?' selected':'')+'>BAJA</option>';
     html+='</select></div>';
     html+='<div class="field-row"><span class="lbl">INGRESO</span><input class="val-input'+cm('ingreso')+'" type="date" data-id="'+pid+'" data-campo="ingreso" value="'+(p.ingreso||'')+'" onchange="rh_marcarCambio(this.dataset.id,this.dataset.campo,this.value)"></div>';
-    html+='<div class="field-row"><span class="lbl" style="color:#7c3aed;font-weight:700">SAL. FISCAL</span><span class="val-input" style="background:#f5f3ff;color:#5b21b6;font-weight:700;border:1px solid #ddd6fe;padding:2px 8px;border-radius:6px;font-size:.82rem">$'+(parseFloat(p.fiscal)||0).toFixed(2)+'</span></div>';
-    html+='<div class="field-row"><span class="lbl" style="color:#0369a1;font-weight:700">SAL. INTEGRADO</span><span class="val-input" style="background:#f0f9ff;color:#0369a1;font-weight:700;border:1px solid #bae6fd;padding:2px 8px;border-radius:6px;font-size:.82rem">$'+(parseFloat(p.integrado)||0).toFixed(2)+'</span></div>';
-    // Procesos
+    // Salarios al final de la misma fila
+    html+='<div style="display:flex;align-items:center;gap:4px;background:#f5f3ff;border:1px solid #ddd6fe;border-radius:6px;padding:2px 6px">'
+      +'<i class="fas fa-dollar-sign" style="color:#7c3aed;font-size:.65rem"></i>'
+      +'<span style="font-size:.62rem;font-weight:700;color:#7c3aed;margin-right:1px">Fiscal</span>'
+      +'<input type="number" class="val-input'+cm('fiscal')+'" data-id="'+pid+'" data-campo="fiscal" value="'+(parseFloat(p.fiscal)||0).toFixed(2)+'" step="0.01" min="0" '
+      +'style="width:72px;border:none;background:transparent;font-size:.8rem;font-weight:800;color:#5b21b6;text-align:right;padding:0;outline:none" '
+      +'onchange="rh_marcarCambio(this.dataset.id,this.dataset.campo,parseFloat(this.value)||0)" onfocus="this.select()">'
+      +'</div>';
+    html+='<div style="display:flex;align-items:center;gap:4px;background:#f0f9ff;border:1px solid #bae6fd;border-radius:6px;padding:2px 6px">'
+      +'<i class="fas fa-dollar-sign" style="color:#0369a1;font-size:.65rem"></i>'
+      +'<span style="font-size:.62rem;font-weight:700;color:#0369a1;margin-right:1px">Integrado</span>'
+      +'<input type="number" class="val-input'+cm('integrado')+'" data-id="'+pid+'" data-campo="integrado" value="'+(parseFloat(p.integrado)||0).toFixed(2)+'" step="0.01" min="0" '
+      +'style="width:72px;border:none;background:transparent;font-size:.8rem;font-weight:800;color:#0369a1;text-align:right;padding:0;outline:none" '
+      +'onchange="rh_marcarCambio(this.dataset.id,this.dataset.campo,parseFloat(this.value)||0)" onfocus="this.select()">'
+      +'</div>';
+    // Procesos al final también en la misma fila
     var procActivos=(p.procesos&&String(p.procesos).trim())?String(p.procesos).split(',').map(function(x){return x.trim();}).filter(Boolean):[];
     var procChips=procActivos.length
-      ? procActivos.map(function(pr){return '<span style="background:#e0e7ff;color:#3730a3;border-radius:20px;padding:1px 8px;font-size:.7rem;font-weight:600;white-space:nowrap">'+pr+'</span>';}).join(' ')
-      : '<span style="color:#94a3b8;font-size:.75rem;font-style:italic">Sin procesos asignados</span>';
-    html+='<div class="field-row" style="align-items:flex-start;flex-direction:column;gap:4px">'
-      +'<span class="lbl">PROCESOS</span>'
-      +'<div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap">'
+      ? procActivos.map(function(pr){return '<span style="background:#e0e7ff;color:#3730a3;border-radius:20px;padding:0px 7px;font-size:.65rem;font-weight:600;white-space:nowrap">'+pr+'</span>';}).join(' ')
+      : '<span style="color:#94a3b8;font-size:.68rem;font-style:italic">Sin procesos</span>';
+    html+='<div style="display:flex;align-items:center;gap:4px;flex-wrap:wrap">'
+      +'<span class="lbl">PROC:</span>'
       +procChips
-      +'<button class="btn btn-sm rounded-pill" style="font-size:.7rem;background:#e0e7ff;color:#3730a3;border:none;padding:2px 8px;flex-shrink:0" '
-      +'data-id="'+pid+'" onclick="rh_abrirProcesos(this.dataset.id)" title="Editar procesos">'
-      +'<i class="fas fa-cog me-1"></i>Editar</button>'
-      +'</div></div>';
-    html+='</div></div></div>';
-    if(modificado) html+='<button class="btn-undo" data-id="'+pid+'" onclick="rh_deshacer(this.dataset.id)" title="Deshacer">&#8635;</button>';
+      +'<button class="btn btn-sm rounded-pill" style="font-size:.62rem;background:#e0e7ff;color:#3730a3;border:none;padding:0px 7px;flex-shrink:0" '
+      +'data-id="'+pid+'" onclick="rh_abrirProcesos(this.dataset.id)"><i class="fas fa-cog me-1"></i>Editar</button>'
+      +'</div>';
+    html+='</div>';
+    html+='</div>';
+    if(modificado) html+='<button class="btn-undo" data-id="'+pid+'" onclick="rh_deshacer(this.dataset.id)" title="Deshacer" style="position:absolute;top:6px;right:6px;font-size:1rem;background:none;border:none;color:#ef4444;cursor:pointer">&#8635;</button>';
     html+='</div>';
   });
-  document.getElementById('rh-grid').innerHTML=html||'<p class="text-center text-muted py-5">Sin resultados.</p>';
+  document.getElementById('rh-grid').innerHTML=html
+    ? '<div style="border:1.5px solid #e2e8f0;border-radius:10px;overflow:hidden;box-shadow:0 2px 8px rgba(0,0,0,.05)">'+html+'</div>'
+    : '<p class="text-center text-muted py-5">Sin resultados.</p>';
   rh_actualizarBoton();
+}
+function rh_abrirFiltroAreas(){
+  var areas=Object.keys(rh_catalogoAreas).sort();
+  var checks=areas.map(function(a,i){
+    var chk=rh_filtroAreas.has(a)?' checked':'';
+    var bg=rh_filtroAreas.has(a)?'#e0e7ff':'transparent';
+    return '<label style="display:flex;align-items:center;gap:8px;padding:5px 8px;border-radius:6px;cursor:pointer;background:'+bg+';margin-bottom:2px">'
+      +'<input type="checkbox" id="fa-chk-'+i+'" value="'+a+'"'+chk+' style="width:15px;height:15px;accent-color:#4f46e5">'
+      +'<span style="font-size:.82rem;font-weight:'+(rh_filtroAreas.has(a)?'700':'400')+';color:#1e293b">'+a+'</span>'
+      +'</label>';
+  }).join('');
+  Swal.fire({
+    title:'<i class="fas fa-building me-2" style="color:#4f46e5"></i>Filtrar por Área',
+    width:440,
+    html:'<div style="text-align:left">'
+      +'<div style="display:flex;gap:6px;margin-bottom:8px">'
+      +'<input id="fa-buscar" class="form-control form-control-sm" placeholder="Buscar área..." '
+      +'oninput="(function(){var b=this.value.toLowerCase();document.querySelectorAll(\'[id^=fa-chk-]\').forEach(function(el){el.closest(\'label\').style.display=el.value.toLowerCase().includes(b)?\'flex\':\'none\';})}).call(this)">'
+      +'<button type="button" class="btn btn-sm" style="background:#e0e7ff;color:#3730a3;border:none;white-space:nowrap" onclick="document.querySelectorAll(\'[id^=fa-chk-]\').forEach(function(el){el.checked=true;})">Todas</button>'
+      +'<button type="button" class="btn btn-sm" style="background:#f1f5f9;color:#64748b;border:none;white-space:nowrap" onclick="document.querySelectorAll(\'[id^=fa-chk-]\').forEach(function(el){el.checked=false;})">Ninguna</button>'
+      +'</div>'
+      +'<div style="max-height:300px;overflow-y:auto;border:1px solid #e2e8f0;border-radius:8px;padding:6px">'+checks+'</div>'
+      +'</div>',
+    showCancelButton:true,
+    confirmButtonText:'<i class="fas fa-filter me-1"></i>Aplicar filtro',
+    cancelButtonText:'Limpiar filtro',
+    confirmButtonColor:'#4f46e5',
+    cancelButtonColor:'#94a3b8',
+    preConfirm:function(){
+      var sel=new Set();
+      document.querySelectorAll('[id^=fa-chk-]').forEach(function(el){ if(el.checked) sel.add(el.value); });
+      return sel;
+    }
+  }).then(function(r){
+    if(r.isDismissed && r.dismiss===Swal.DismissReason.cancel){ rh_filtroAreas=new Set(); rh_renderizar(); return; }
+    if(!r.isConfirmed) return;
+    rh_filtroAreas=r.value;
+    rh_renderizar();
+  });
+}
+function rh_abrirFiltroEstados(){
+  var estados=['ACTIVO','INCAPACIDAD'];
+  var colores={'ACTIVO':'#16a34a','INCAPACIDAD':'#d97706'};
+  var bgs={'ACTIVO':'#dcfce7','INCAPACIDAD':'#fef3c7'};
+  var checks=estados.map(function(e,i){
+    var chk=rh_filtroEstados.has(e)?' checked':'';
+    return '<label style="display:flex;align-items:center;gap:10px;padding:8px 12px;border-radius:8px;cursor:pointer;background:'+(rh_filtroEstados.has(e)?bgs[e]:'transparent')+';margin-bottom:4px;border:1px solid '+(rh_filtroEstados.has(e)?colores[e]+'40':'transparent')+'">'
+      +'<input type="checkbox" id="fe-chk-'+i+'" value="'+e+'"'+chk+' style="width:16px;height:16px;accent-color:'+colores[e]+'">'
+      +'<span style="font-size:.9rem;font-weight:700;color:'+colores[e]+'">'+e+'</span>'
+      +'</label>';
+  }).join('');
+  Swal.fire({
+    title:'<i class="fas fa-circle-dot me-2" style="color:#0369a1"></i>Filtrar por Estado',
+    width:360,
+    html:'<div style="text-align:left;padding:4px">'+checks+'</div>',
+    showCancelButton:true,
+    confirmButtonText:'<i class="fas fa-filter me-1"></i>Aplicar filtro',
+    cancelButtonText:'Limpiar filtro',
+    confirmButtonColor:'#0369a1',
+    cancelButtonColor:'#94a3b8',
+    preConfirm:function(){
+      var sel=new Set();
+      document.querySelectorAll('[id^=fe-chk-]').forEach(function(el){ if(el.checked) sel.add(el.value); });
+      return sel;
+    }
+  }).then(function(r){
+    if(r.isDismissed && r.dismiss===Swal.DismissReason.cancel){ rh_filtroEstados=new Set(); rh_renderizar(); return; }
+    if(!r.isConfirmed) return;
+    rh_filtroEstados=r.value;
+    rh_renderizar();
+  });
 }
 function rh_abrirProcesos(id){
   var p=rh_datos.find(function(x){return String(x.id)===String(id);});
@@ -197,6 +323,10 @@ function rh_subirFoto(id,input){ /* no utilizado */ }
 function rh_marcarCambio(id,campo,valor){
   var p=rh_datos.find(function(x){return String(x.id)===String(id);});
   if(p){
+    // Campos numéricos: convertir siempre a número
+    if(campo==='fiscal'||campo==='integrado'||campo==='bonos'){
+      valor=parseFloat(valor)||0;
+    }
     p[campo]=valor;
     rh_idsModificados.add(id);
     if(!rh_camposModificados[id]) rh_camposModificados[id]=new Set();
@@ -292,6 +422,55 @@ function rh_actualizarBoton(){
   document.getElementById('rh-countCambios').innerText = c;
   btn.style.display  = c > 0 ? 'flex' : 'none';
   if(btnU) btnU.style.display = c > 0 ? 'flex' : 'none';
+  // Activar/desactivar guardia de cambios sin guardar
+  if(c > 0){
+    if(!window._rhGuardiaSalida){
+      window._rhGuardiaSalida = true;
+      // Interceptar clics en items del sidebar que cambien de módulo
+      document.querySelectorAll('.nav-item[data-module], .sidebar-link[data-module], [onclick*="loadModule"], [onclick*="cargar"], .menu-item').forEach(function(el){
+        if(!el._rhGuardiaHandler){
+          el._rhGuardiaHandler = function(e){
+            if(window._rhGuardiaSalida && rh_idsModificados && rh_idsModificados.size > 0){
+              e.preventDefault();
+              e.stopImmediatePropagation();
+              var destino = el._rhGuardiaOnclick || el.getAttribute('onclick') || '';
+              Swal.fire({
+                icon:'warning',
+                title:'⚠️ Cambios sin guardar',
+                html:'<div style="font-size:.95rem">Tienes <b>'+rh_idsModificados.size+' registro(s)</b> con cambios sin guardar en Plantilla Activa.<br><br>¿Qué deseas hacer?</div>',
+                showCancelButton:true,
+                confirmButtonText:'<i class="fas fa-sign-out-alt me-1"></i>Sí, salir sin guardar',
+                cancelButtonText:'<i class="fas fa-save me-1"></i>No, regresar para guardar',
+                confirmButtonColor:'#dc2626',
+                cancelButtonColor:'#4f46e5',
+                reverseButtons:true
+              }).then(function(r){
+                if(r.isConfirmed){
+                  window._rhGuardiaSalida = false;
+                  rh_idsModificados = new Set();
+                  el.removeEventListener('click', el._rhGuardiaHandler, true);
+                  el.click();
+                }
+              });
+            }
+          };
+          el._rhGuardiaOnclick = el.getAttribute('onclick');
+          el.addEventListener('click', el._rhGuardiaHandler, true);
+        }
+      });
+    }
+  } else {
+    // Sin cambios: desactivar guardia y limpiar listeners
+    if(window._rhGuardiaSalida){
+      window._rhGuardiaSalida = false;
+      document.querySelectorAll('.nav-item[data-module], .sidebar-link[data-module], [onclick*="loadModule"], [onclick*="cargar"], .menu-item').forEach(function(el){
+        if(el._rhGuardiaHandler){
+          el.removeEventListener('click', el._rhGuardiaHandler, true);
+          delete el._rhGuardiaHandler;
+        }
+      });
+    }
+  }
 }
 function rh_guardarTodo(){
   var lote=Array.from(rh_idsModificados).map(function(id){return rh_datos.find(function(x){return String(x.id)===String(id);});}).filter(Boolean);
@@ -334,8 +513,12 @@ function rh_nuevoEmpleado(){
   });
 }
 function rh_abrirModificarSalarios(){
-  // Agrupar activos e incapacidad por combinación fiscal+integrado
-  var activos = rh_datos.filter(function(p){ return p.estado==='ACTIVO'||p.estado==='INCAPACIDAD'; });
+  // Solo SEMANAL + ACTIVO o INCAPACIDAD
+  var activos = rh_datos.filter(function(p){
+    var esActivo = p.estado==='ACTIVO'||p.estado==='INCAPACIDAD';
+    var esSemanal = String(p.tipoNomina||'').toUpperCase()==='SEMANAL';
+    return esActivo && esSemanal;
+  });
   var grupos = {};
   activos.forEach(function(p){
     var fiscal = parseFloat(p.fiscal)||0;
@@ -345,32 +528,41 @@ function rh_abrirModificarSalarios(){
     grupos[key].personas.push(p.id);
   });
   var listaGrupos = Object.keys(grupos).map(function(k){ return grupos[k]; });
-  listaGrupos.sort(function(a,b){ return b.personas.length - a.personas.length; });
+  listaGrupos.sort(function(a,b){ return a.fiscal - b.fiscal || a.integrado - b.integrado; });
+  var totalPersonasModal = activos.length;
 
   var filas = listaGrupos.map(function(g,i){
-    return '<tr>'
-      +'<td style="padding:8px 6px;font-weight:700;color:#5b21b6;white-space:nowrap">$'+g.fiscal.toFixed(2)+'</td>'
-      +'<td style="padding:8px 6px;font-weight:700;color:#0369a1;white-space:nowrap">$'+g.integrado.toFixed(2)+'</td>'
-      +'<td style="padding:8px 6px;text-align:center"><span style="background:#e0e7ff;color:#3730a3;border-radius:20px;padding:2px 10px;font-size:.78rem;font-weight:700">'+g.personas.length+' '+( g.personas.length===1?'persona':'personas')+'</span></td>'
-      +'<td style="padding:8px 6px">'
-      +'<input type="number" id="rh-sal-nfis-'+i+'" value="'+g.fiscal.toFixed(2)+'" step="0.01" min="0" '
-      +'style="width:90px;border:1px solid #ddd6fe;border-radius:6px;padding:3px 6px;font-size:.82rem;color:#5b21b6;font-weight:700;text-align:right">'
+    var cebra = i%2===0 ? '#f8f7ff' : '#ffffff';
+    var borde = 'border-top:1px solid #e2e8f0;';
+    return '<tr style="background:'+cebra+'" data-row="'+i+'">'
+      +'<td style="'+borde+'padding:7px 8px;font-weight:700;color:#5b21b6;white-space:nowrap;font-size:.82rem">$'+g.fiscal.toFixed(2)+'</td>'
+      +'<td style="'+borde+'padding:7px 8px;font-weight:700;color:#0369a1;white-space:nowrap;font-size:.82rem">$'+g.integrado.toFixed(2)+'</td>'
+      +'<td style="'+borde+'padding:7px 8px;text-align:center"><span style="background:#e0e7ff;color:#3730a3;border-radius:20px;padding:2px 10px;font-size:.75rem;font-weight:700">'+g.personas.length+' '+(g.personas.length===1?'persona':'personas')+'</span></td>'
+      +'<td style="'+borde+'padding:7px 8px">'
+      +'<input type="number" id="rh-sal-nfis-'+i+'" data-row="'+i+'" data-col="0" value="'+g.fiscal.toFixed(2)+'" step="0.01" min="0" '
+      +'style="width:88px;border:1.5px solid #ddd6fe;border-radius:6px;padding:3px 7px;font-size:.82rem;color:#5b21b6;font-weight:700;text-align:right;background:#faf9ff">'
       +'</td>'
-      +'<td style="padding:8px 6px">'
-      +'<input type="number" id="rh-sal-nint-'+i+'" value="'+g.integrado.toFixed(2)+'" step="0.01" min="0" '
-      +'style="width:90px;border:1px solid #bae6fd;border-radius:6px;padding:3px 6px;font-size:.82rem;color:#0369a1;font-weight:700;text-align:right">'
+      +'<td style="'+borde+'padding:7px 8px">'
+      +'<input type="number" id="rh-sal-nint-'+i+'" data-row="'+i+'" data-col="1" value="'+g.integrado.toFixed(2)+'" step="0.01" min="0" '
+      +'style="width:88px;border:1.5px solid #bae6fd;border-radius:6px;padding:3px 7px;font-size:.82rem;color:#0369a1;font-weight:700;text-align:right;background:#f0f9ff">'
       +'</td>'
       +'</tr>';
   }).join('');
 
+  var totalFilas = listaGrupos.length;
+
   Swal.fire({
-    title:'<i class="fas fa-dollar-sign me-2" style="color:#7c3aed"></i>Modificar Salarios Masivamente',
+    title:'<i class="fas fa-dollar-sign me-2" style="color:#7c3aed"></i>Modificar Salarios — Nómina Semanal',
     width:680,
     html:'<div style="text-align:left">'
-      +'<p style="font-size:.82rem;color:#64748b;margin-bottom:10px">Edita los salarios de cada grupo y presiona <b>Actualizar Cambios</b>. Solo se actualizan las filas donde el nuevo valor difiera del actual.</p>'
-      +'<div style="overflow-x:auto;border:1px solid #e2e8f0;border-radius:8px">'
-      +'<table style="width:100%;border-collapse:collapse;font-size:.82rem">'
-      +'<thead><tr style="background:#f5f3ff">'
+      +'<p style="font-size:.82rem;color:#64748b;margin-bottom:6px">Solo nómina <b>SEMANAL</b> — Activos e Incapacidad. Usa <kbd>↑</kbd><kbd>↓</kbd> para navegar entre filas y <kbd>Tab</kbd>/<kbd>←</kbd><kbd>→</kbd> entre columnas.</p>'
+      +'<div style="background:#e0e7ff;border-radius:8px;padding:5px 14px;margin-bottom:10px;display:inline-flex;align-items:center;gap:8px">'
+      +'<i class="fas fa-users" style="color:#3730a3;font-size:.85rem"></i>'
+      +'<span style="font-size:.82rem;font-weight:700;color:#3730a3">Total: <b>'+totalPersonasModal+'</b> personas (nómina semanal activas/incapacidad)</span>'
+      +'</div>'
+      +'<div style="overflow-x:auto;border:1px solid #e2e8f0;border-radius:8px;max-height:400px;overflow-y:auto">'
+      +'<table id="rh-sal-tabla" style="width:100%;border-collapse:collapse;font-size:.82rem">'
+      +'<thead style="position:sticky;top:0;z-index:2"><tr style="background:#f5f3ff">'
       +'<th style="padding:8px 6px;text-align:left;color:#5b21b6;font-size:.78rem">SAL. FISCAL ACTUAL</th>'
       +'<th style="padding:8px 6px;text-align:left;color:#0369a1;font-size:.78rem">SAL. INTEGRADO ACTUAL</th>'
       +'<th style="padding:8px 6px;text-align:center;color:#374151;font-size:.78rem">PERSONAS</th>'
@@ -379,6 +571,22 @@ function rh_abrirModificarSalarios(){
       +'</tr></thead>'
       +'<tbody>'+filas+'</tbody>'
       +'</table></div></div>',
+    didOpen: function(){
+      // Seleccionar todo al entrar en la celda + navegación con flechas
+      var tabla = document.getElementById('rh-sal-tabla');
+      if(!tabla) return;
+      tabla.querySelectorAll('input[type=number]').forEach(function(inp){
+        inp.addEventListener('focus', function(){ this.select(); });
+        inp.addEventListener('keydown', function(e){
+          var row = parseInt(this.dataset.row);
+          var col = parseInt(this.dataset.col);
+          if(e.key==='ArrowDown'){ e.preventDefault(); var next=document.getElementById('rh-sal-n'+(col===0?'fis':'int')+'-'+(row+1<totalFilas?row+1:row)); if(next){next.focus();next.select();} }
+          else if(e.key==='ArrowUp'){ e.preventDefault(); var prev=document.getElementById('rh-sal-n'+(col===0?'fis':'int')+'-'+(row>0?row-1:0)); if(prev){prev.focus();prev.select();} }
+          else if(e.key==='ArrowRight'||e.key==='Tab'&&!e.shiftKey){ if(col===0){ e.preventDefault(); var r=document.getElementById('rh-sal-nint-'+row); if(r){r.focus();r.select();} } }
+          else if(e.key==='ArrowLeft'||(e.key==='Tab'&&e.shiftKey)){ if(col===1){ e.preventDefault(); var l=document.getElementById('rh-sal-nfis-'+row); if(l){l.focus();l.select();} } }
+        });
+      });
+    },
     showCancelButton:true,
     confirmButtonText:'<i class="fas fa-check me-1"></i>Actualizar Cambios',
     cancelButtonText:'Cancelar',
@@ -441,10 +649,14 @@ function rh_abrirModificarSalarios(){
         c.ids.forEach(function(id){
           var p = rh_datos.find(function(x){return String(x.id)===String(id);});
           if(p){
-            p.fiscal    = c.fiscalNuevo;
-            p.integrado = c.integNuevo;
+            p.fiscal    = parseFloat(c.fiscalNuevo)||0;
+            p.integrado = parseFloat(c.integNuevo)||0;
             rh_idsModificados.add(p.id);
-            lote.push(p);
+            // Clonar el objeto para el lote con valores limpios
+            var copia = JSON.parse(JSON.stringify(p));
+            copia.fiscal    = p.fiscal;
+            copia.integrado = p.integrado;
+            lote.push(copia);
           }
         });
       });

@@ -390,19 +390,41 @@ function guardarLoteOperadores(listaCambios) {
   var data = sheet.getDataRange().getValues();
   var headers = data[0].map(function(h){ return String(h).toUpperCase().trim(); });
 
-  var getIdx = function(n) {
-    for (var k = 0; k < headers.length; k++) if (headers[k].includes(n)) return k;
+  // Búsqueda exacta primero, luego parcial como fallback
+  var getIdx = function(nombres) {
+    var lista = Array.isArray(nombres) ? nombres : [nombres];
+    // Paso 1: coincidencia exacta
+    for (var k = 0; k < headers.length; k++) {
+      for (var n = 0; n < lista.length; n++) {
+        if (headers[k] === lista[n]) return k;
+      }
+    }
+    // Paso 2: coincidencia parcial
+    for (var k2 = 0; k2 < headers.length; k2++) {
+      for (var n2 = 0; n2 < lista.length; n2++) {
+        if (headers[k2].includes(lista[n2])) return k2;
+      }
+    }
     return -1;
   };
 
   var IDX = {
-    ID: getIdx("ID"), NOMBRE: getIdx("NOMBRE"), PROCESOS: getIdx("PROCESOS"),
-    FOTO: getIdx("FOTO"), AREA: getIdx("AREA"), PUESTO: getIdx("PUESTO"),
-    CLAVE: getIdx("CLAVE"), TIPO: getIdx("TIPO"), INGRESO: getIdx("INGRESO"),
-    ESTADO: getIdx("ESTADO"), FISCAL: getIdx("FISCAL"), INTEGRADO: getIdx("INTEGRADO"),
-    BAJA: getIdx("BAJA"), CELULAR: getIdx("CELULAR"), BONOS: getIdx("BONOS")
+    ID:         getIdx("ID"),
+    NOMBRE:     getIdx("NOMBRE"),
+    PROCESOS:   getIdx("PROCESOS"),
+    FOTO:       getIdx("FOTO"),
+    AREA:       getIdx("AREA"),
+    PUESTO:     getIdx("PUESTO"),
+    CLAVE:      getIdx("CLAVE"),
+    TIPO:       getIdx("TIPO"),
+    INGRESO:    getIdx(["FECHA_INGRESO","INGRESO"]),
+    ESTADO:     getIdx("ESTADO"),
+    FISCAL:     getIdx(["SAL_DIA_FIS","FISCAL"]),
+    INTEGRADO:  getIdx(["SAL_DIA_INT","INTEGRADO"]),
+    BAJA:       getIdx(["FECHA_BAJA","BAJA"]),
+    CELULAR:    getIdx("CELULAR"),
+    BONOS:      getIdx("BONOS")
   };
-  if (IDX.INGRESO === -1) IDX.INGRESO = getIdx("FECHA_INGRESO");
 
   var mapaFilas = {};
   for (var i = 1; i < data.length; i++) {
@@ -410,11 +432,19 @@ function guardarLoteOperadores(listaCambios) {
     if (idFila) mapaFilas[idFila] = i + 1;
   }
 
+  var actualizados = 0;
   listaCambios.forEach(function(datos) {
-    var filaDestino = (datos.id && mapaFilas[datos.id]) ? mapaFilas[datos.id] : (sheet.getLastRow() + 1);
-    if (!datos.id) datos.id = Utilities.getUuid();
+    var filaDestino = (datos.id && mapaFilas[datos.id]) ? mapaFilas[datos.id] : -1;
+    if (filaDestino === -1) {
+      filaDestino = sheet.getLastRow() + 1;
+      if (!datos.id) datos.id = Utilities.getUuid();
+    }
 
-    var setVal = function(idx, val) { if (idx > -1) sheet.getRange(filaDestino, idx + 1).setValue(val); };
+    var setVal = function(idx, val) {
+      if (idx > -1) {
+        sheet.getRange(filaDestino, idx + 1).setValue(val);
+      }
+    };
 
     setVal(IDX.ID,         datos.id);
     setVal(IDX.NOMBRE,     datos.nombre);
@@ -424,21 +454,28 @@ function guardarLoteOperadores(listaCambios) {
     setVal(IDX.AREA,       datos.area);
     setVal(IDX.PUESTO,     datos.puesto);
     setVal(IDX.PROCESOS,   datos.procesos);
-    setVal(IDX.FISCAL,     datos.fiscal);
-    setVal(IDX.INTEGRADO,  datos.integrado);
-    setVal(IDX.BONOS,      datos.bonos);
+    setVal(IDX.FISCAL,     typeof datos.fiscal    === 'number' ? datos.fiscal    : (parseFloat(datos.fiscal)    || 0));
+    setVal(IDX.INTEGRADO,  typeof datos.integrado === 'number' ? datos.integrado : (parseFloat(datos.integrado) || 0));
+    setVal(IDX.BONOS,      typeof datos.bonos     === 'number' ? datos.bonos     : (parseFloat(datos.bonos)     || 0));
     setVal(IDX.ESTADO,     datos.estado);
     setVal(IDX.TIPO,       datos.tipoNomina);
-    setVal(IDX.INGRESO,    datos.ingreso);
     setVal(IDX.BAJA,       datos.fechaBaja);
+    if (IDX.INGRESO > -1 && datos.ingreso) {
+      var partes = String(datos.ingreso).split("-");
+      if (partes.length === 3) {
+        sheet.getRange(filaDestino, IDX.INGRESO + 1).setValue(new Date(partes[0], partes[1]-1, partes[2]));
+      } else {
+        sheet.getRange(filaDestino, IDX.INGRESO + 1).setValue(datos.ingreso);
+      }
+    }
+    actualizados++;
 
-    // LÓGICA AUTOMÁTICA: Si es BAJA, crear VACANTE en tabla OPERADORES
     if (datos.estado === "BAJA") {
       crearVacanteAutomatica(datos.puesto || "Sin puesto", datos.area || "Sin área");
     }
   });
 
-  return "✅ Proceso completado. Registros actualizados y vacantes generadas si aplicaba.";
+  return "✅ Proceso completado. " + actualizados + " registros actualizados.";
 }
 
 function guardarOperador(datos) {
@@ -1366,7 +1403,7 @@ function obtenerTodasLasActas(filtros) {
     ART:   col("ARTICULO_REGLAMENTO"), SANC: col("SANCION"),
     TEST1: col("TESTIGO_1"), TEST2: col("TESTIGO_2"),
     AUTH:  col("AUTORIZADO_POR"), FIRMA: col("FIRMA_EMPLEADO"),
-    EST:   col("ESTATUS"), OBS: col("OBSERVACIONES")
+    EST:   col("ESTATUS"), OBS: col("OBSERVACIONES"), URL: col("URL")
   };
   var f = filtros || {};
   var lista = [];
@@ -1377,6 +1414,20 @@ function obtenerTodasLasActas(filtros) {
     if (f.empleado  && !emp.includes(f.empleado.toUpperCase()))  continue;
     if (f.estatus   && f.estatus  !== "TODOS" && est  !== f.estatus.toUpperCase())  continue;
     if (f.tipoFalta && f.tipoFalta !== "TODOS" && !tipo.includes(f.tipoFalta.toUpperCase())) continue;
+    // Filtro por mes/año
+    if (f.mes || f.anio) {
+      var rawFecha = data[i][IDX.FECHA];
+      var dFecha = rawFecha instanceof Date ? rawFecha : new Date(rawFecha);
+      if (isNaN(dFecha.getTime())) {
+        // Intentar parsear formato dd/MM/yyyy
+        var partes = String(rawFecha||"").split("/");
+        if(partes.length===3) dFecha = new Date(partes[2], partes[1]-1, partes[0]);
+      }
+      if (!isNaN(dFecha.getTime())) {
+        if (f.mes  && (dFecha.getMonth()+1) !== Number(f.mes))  continue;
+        if (f.anio && dFecha.getFullYear()  !== Number(f.anio)) continue;
+      }
+    }
     var _g = function(idx) { return idx > -1 ? data[i][idx] : ""; };
     lista.push({
       id: String(_g(IDX.ID)||""), folio: String(_g(IDX.FOLIO)||""),
@@ -1387,11 +1438,49 @@ function obtenerTodasLasActas(filtros) {
       sancion: String(_g(IDX.SANC)||""), testigo1: String(_g(IDX.TEST1)||""),
       testigo2: String(_g(IDX.TEST2)||""), autorizadoPor: String(_g(IDX.AUTH)||""),
       firmaEmpleado: String(_g(IDX.FIRMA)||""), estatus: String(_g(IDX.EST)||""),
-      observaciones: String(_g(IDX.OBS)||"")
+      observaciones: String(_g(IDX.OBS)||""),
+      url: String(_g(IDX.URL)||"")
     });
   }
   lista.reverse();
   return lista;
+}
+
+function subirPdfActa(payload) {
+  // payload: { folio, nombre, base64 }
+  try {
+    var carpeta = DriveApp.getRootFolder();
+    var nombre  = 'ACTA_' + payload.folio + '_' + payload.nombre;
+    // Eliminar archivo anterior con mismo folio si existe
+    var iter = carpeta.getFilesByName(nombre);
+    while(iter.hasNext()) iter.next().setTrashed(true);
+    // Crear nuevo archivo
+    var decoded = Utilities.base64Decode(payload.base64);
+    var blob    = Utilities.newBlob(decoded, 'application/pdf', nombre);
+    var file    = carpeta.createFile(blob);
+    file.setSharing(DriveApp.Access.ANYONE_WITH_LINK, DriveApp.Permission.VIEW);
+    var url = 'https://drive.google.com/file/d/' + file.getId() + '/view';
+    // Guardar URL en columna S (URL) de ACTAS_ADMIN
+    var ssRH  = SpreadsheetApp.openById(ID_HOJA_RH);
+    var sheet = ssRH.getSheetByName("ACTAS_ADMIN");
+    if(sheet && sheet.getLastRow() > 1){
+      var data    = sheet.getDataRange().getValues();
+      var headers = data[0].map(function(h){ return String(h).toUpperCase().trim(); });
+      var iFolio  = headers.indexOf("FOLIO");
+      var iUrl    = headers.indexOf("URL");
+      if(iFolio > -1 && iUrl > -1){
+        for(var i = 1; i < data.length; i++){
+          if(String(data[i][iFolio]||"") === String(payload.folio)){
+            sheet.getRange(i+1, iUrl+1).setValue(url);
+            break;
+          }
+        }
+      }
+    }
+    return url;
+  } catch(e) {
+    return 'ERROR: ' + e.toString();
+  }
 }
 
 function actualizarEstatusActa(folio, nuevoEstatus) {

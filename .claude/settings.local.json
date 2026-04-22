@@ -5,7 +5,10 @@
       "Bash(tail -c 5 \"C:\\\\Users\\\\rcdga\\\\rrhh\\\\Codigo_RH_GS.js\" | xxd)",
       "Bash(node extract_modules.js)",
       "Bash(node rebuild_setup.js)",
-      "Bash(npm run *)"
+      "Bash(npm run *)",
+      "Bash(node rebuild_main.js)",
+      "Bash(git add *)",
+      "Bash(git commit -m ' *)"
     ]
   }
 }
