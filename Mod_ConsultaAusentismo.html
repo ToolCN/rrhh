@@ -229,7 +229,7 @@ function _aus_generarExcelJS(datosAnio, datosMes, meses3, anio, mes){
   ws1.views = [{showGridLines:false}];
 
   // Título principal
-  ws1.mergeCells('A1:O1');
+  ws1.mergeCells('A1:K1');
   var titleCell = ws1.getCell('A1');
   titleCell.value = '📊  REPORTE ANUAL DE AUSENTISMO — '+anio;
   applyStyle(titleCell, {
@@ -239,7 +239,7 @@ function _aus_generarExcelJS(datosAnio, datosMes, meses3, anio, mes){
   });
   ws1.getRow(1).height = 40;
 
-  ws1.mergeCells('A2:O2');
+  ws1.mergeCells('A2:K2');
   var subCell = ws1.getCell('A2');
   subCell.value = 'Generado el '+new Date().toLocaleDateString('es-MX')+' | TOOL CN Recursos Humanos';
   applyStyle(subCell, {
@@ -272,7 +272,7 @@ function _aus_generarExcelJS(datosAnio, datosMes, meses3, anio, mes){
   ws1.getRow(4).height = 22;
   var hdrs1 = ['Mes','Total Faltas','Justificadas','Injustificadas','Empleados Únicos','% Injustificadas'];
   var cols1 = ['A','B','C','D','E','F'];
-  var anchos1 = [18, 14, 14, 16, 16, 18];
+  var anchos1 = [12, 14, 14, 16, 16, 28];
   cols1.forEach(function(c,i){ ws1.getColumn(c).width = anchos1[i]; });
   hdrs1.forEach(function(h,i){
     var cell = ws1.getCell(cols1[i]+'4');
@@ -431,16 +431,12 @@ function _aus_generarExcelJS(datosAnio, datosMes, meses3, anio, mes){
 
   // ── Gráfica de barras (datos como tabla visual con barras unicode-style) ──
   // Columnas H-O para gráfica visual de barras
-  ws1.getColumn('H').width = 6;
-  ws1.getColumn('I').width = 14;
+  ws1.getColumn('H').width = 7.5;
+  ws1.getColumn('I').width = 16.7;
   ws1.getColumn('J').width = 8;
-  ws1.getColumn('K').width = 10;  // INJUST. más ancha para no cortarse
-  ws1.getColumn('L').width = 6;
-  ws1.getColumn('M').width = 6;
-  ws1.getColumn('N').width = 6;
-  ws1.getColumn('O').width = 6;
+  ws1.getColumn('K').width = 10;
 
-  ws1.mergeCells('H4:O4');
+  ws1.mergeCells('H4:K4');
   var grafTit = ws1.getCell('H4');
   grafTit.value = '📊  GRÁFICA DE AUSENTISMO POR MES — '+anio;
   applyStyle(grafTit, {
@@ -451,7 +447,7 @@ function _aus_generarExcelJS(datosAnio, datosMes, meses3, anio, mes){
 
   // Encabezados gráfica
   var maxVal = Math.max.apply(null, Object.keys(porMes).map(function(k){ return porMes[k].total; }).concat([1]));
-  var grafCols = ['H','I','J','K','L','M','N','O'];
+  var grafCols = ['H','I','J','K'];
   // Mini-gráfica con bloques de celda coloreados proporcional
   for(var m=0; m<12; m++){
     var d2 = porMes[m];
@@ -528,7 +524,7 @@ function _aus_generarExcelJS(datosAnio, datosMes, meses3, anio, mes){
   ws2.getRow(3).height = 8;
 
   // Anchos columnas hoja 2
-  var w2cols = {A:14, B:10, C:22, D:8, E:24, F:12, G:12, H:36, I:20, J:20};
+  var w2cols = {A:13.9, B:15.7, C:17.9, D:14, E:17, F:14, G:10, H:14.4, I:30, J:12, K:10};
   Object.keys(w2cols).forEach(function(c){ ws2.getColumn(c).width = w2cols[c]; });
 
   // ── Tabla detalle del mes ──
@@ -549,6 +545,7 @@ function _aus_generarExcelJS(datosAnio, datosMes, meses3, anio, mes){
     cell.value = h;
     applyStyle(cell, hdrStyle(colNaranja));
   });
+  ws2.mergeCells('H5:K5');
   ws2.getRow(5).height = 20;
 
   // Ordenar por fecha
